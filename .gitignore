@@ -1,0 +1,9 @@
+# Older firmware kept in the local project folder; not part of this repository
+/GrandfatherClock/
+/archive/
+
+# Build output
+build/
+*.bin
+*.elf
+*.map

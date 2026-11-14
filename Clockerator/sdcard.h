@@ -1,0 +1,78 @@
+/* =====================================================================
+   sdcard.h  —  microSD long-term logging (SdFat over bit-banged SPI)
+   ---------------------------------------------------------------------
+   Files (plain CSV with a header row; open straight in Excel):
+     /chimes/YYYY-MM.csv               date,time,epoch_ms,sec_from_hour,peak_pa,peak_db,pitch_hz,strike
+     /events/YYYY-MM.csv               date,time,epoch_ms,strikes,duration_s,max_db,pitch_hz,recording
+     /levels/YYYY-MM/YYYY-MM-DD.csv    date,time,max_db,leq_db
+     /system.csv                       date,time,event,detail
+   and the chime recordings (recorder.h):
+     /recordings/YYYY-MM-DD/HH-MM-SS.wav
+
+   Rows are queued in RAM and appended every SD_FLUSH_MS (sooner if a
+   queue fills). Files are opened, appended and closed on each flush, so
+   between flushes the card can be removed; a missing or failed card is
+   re-mounted every SD_RETRY_MS and the queued rows are written then.
+   Nothing is written until NTP time is valid (rows need timestamps).
+   ===================================================================== */
+#ifndef SDCARD_H
+#define SDCARD_H
+
+#include <Arduino.h>
+#include <ESP8266WebServer.h>
+#include <SdFat.h>
+
+struct SdLogStatus {
+  bool        ready;          // card mounted
+  const char* msg;            // human-readable state / last error
+  uint32_t    cardMB;
+  uint8_t     fatType;        // 12 / 16 / 32
+  uint32_t    chimesSaved;    // since boot
+  uint32_t    eventsSaved;    // since boot
+  uint32_t    levelRows;      // since boot
+  uint32_t    writeErrors;    // since boot
+  uint32_t    chimesLost;     // dropped because the queue was full
+  uint8_t     chimesPending;
+  uint32_t    lastFlushEpoch; // 0 = none yet
+};
+
+void     sdBegin();           // mount the card (failure is not fatal)
+void     sdService();         // loop(): flush when due, re-mount when missing
+bool     sdReady();
+bool     sdTimeOk();          // NTP time is valid (needed for every file name/row)
+SdLogStatus sdGetStatus();
+// Called with true/false around each flush (drives the status LED).
+void     sdSetActivityCallback(void (*cb)(bool busy));
+
+// For the recorder: the mounted volume, and how to report a failed write
+// (the card is re-mounted SD_RETRY_MS later).
+SdFat32& sdFs();
+void     sdFail(const char* msg);
+
+void     sdQueueChime(uint64_t epochMs, float peakPa, float pitchHz, uint8_t strike);
+// System log row. Rows queued before NTP time is valid are stamped
+// from their uptime once the time is known.
+void     sdQueueSystem(const char* event, const char* detail);
+
+// Write speed test: 256 KB written and read back in /bench.tmp (removed
+// again). False if the card is missing or busy recording.
+struct SdBench { bool ok; float writeKBs, readKBs; uint16_t maxStallMs; const char* msg; };
+SdBench  sdBenchmark();
+
+// ---- HTTP helpers (stream straight from the card) ----
+// A monthly CSV series (SD_CHIME_DIR or SD_EVENT_DIR), oldest first, one
+// header row. months = 0: everything; otherwise only the newest `months`.
+bool     sdSendMonthly(ESP8266WebServer& srv, const char* dir, uint16_t months);
+// One file. CSV is sent as a download; WAV inline (for <audio>, with HTTP
+// Range support, which Safari needs) unless `download`. Only paths inside
+// the log/recording folders are served.
+bool     sdSendFile(ESP8266WebServer& srv, const String& path, bool download);
+// JSON listing. month == "": chime/event files + level months; "YYYY-MM":
+// that month's level files.
+void     sdSendListing(ESP8266WebServer& srv, const String& month);
+// JSON listing of recordings. day == "": the day folders; "YYYY-MM-DD":
+// that day's clips. Unsorted (FAT order); the page sorts.
+void     sdSendRecListing(ESP8266WebServer& srv, const String& day);
+uint32_t sdChimeLogBytes();   // total size of the chime files
+
+#endif // SDCARD_H

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 800" width="980" height="800" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <style>
+      .lbl   { font-family: system-ui, -apple-system, sans-serif; }
+      .pin   { font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 12px; fill: #f2e8d9; }
+      .pinsm { font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 10.5px; fill: #b9a691; }
+      .cap   { font-family: system-ui, sans-serif; font-size: 12px; fill: #b9a691; }
+      .note  { font-family: system-ui, sans-serif; font-size: 12.5px; fill: #f2e8d9; }
+      .hdr   { font-size: 17px; fill: #c9a227; letter-spacing: .06em; }
+      .wire  { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect width="980" height="800" fill="#191310"/>
+  <rect x="0" y="0" width="980" height="4" fill="#c9a227"/>
+
+  <text x="40" y="52" class="hdr" font-size="25">Clockerator 3.0 — Wiring</text>
+  <text x="40" y="76" class="cap">Wemos / LOLIN D1 mini (ESP8266) · INMP441 I2S microphone · microSD module (AMS1117 + 74LVC125A) · firmware 3.0.0</text>
+
+  <!-- ============ D1 MINI ============ -->
+  <rect x="380" y="170" width="220" height="350" rx="8" fill="#2d231a" stroke="#c9a227" stroke-width="2"/>
+  <text x="490" y="192" text-anchor="middle" class="lbl" font-size="13" fill="#f2e8d9" font-weight="600">D1 mini (ESP8266)</text>
+  <text x="490" y="505" text-anchor="middle" class="pinsm">USB (power / flashing)</text>
+  <rect x="457" y="510" width="66" height="10" rx="2" fill="#3f3125"/>
+
+  <!-- left header: RST A0 D0 D5 D6 D7 D8 3V3 -->
+  <g>
+    <rect x="365" y="216" width="15" height="9" fill="#5a4a36"/><text x="390" y="224" class="pin" fill="#8b7860">RST</text>
+    <rect x="365" y="256" width="15" height="9" fill="#5a4a36"/><text x="390" y="264" class="pin" fill="#8b7860">A0</text>
+    <rect x="365" y="296" width="15" height="9" fill="#c9a227"/><text x="390" y="304" class="pin">D0</text><text x="420" y="304" class="pinsm">GPIO16</text>
+    <rect x="365" y="336" width="15" height="9" fill="#c9a227"/><text x="390" y="344" class="pin">D5</text><text x="420" y="344" class="pinsm">GPIO14</text>
+    <rect x="365" y="376" width="15" height="9" fill="#c9a227"/><text x="390" y="384" class="pin">D6</text><text x="420" y="384" class="pinsm">GPIO12</text>
+    <rect x="365" y="416" width="15" height="9" fill="#c9a227"/><text x="390" y="424" class="pin">D7</text><text x="420" y="424" class="pinsm">GPIO13</text>
+    <rect x="365" y="456" width="15" height="9" fill="#5a4a36"/><text x="390" y="464" class="pin" fill="#8b7860">D8</text>
+    <rect x="365" y="476" width="15" height="9" fill="#c9a227"/><text x="390" y="484" class="pin">3V3</text>
+  </g>
+  <!-- right header: TX RX D1 D2 D3 D4 GND 5V -->
+  <g>
+    <rect x="600" y="216" width="15" height="9" fill="#5a4a36"/><text x="590" y="224" text-anchor="end" class="pin" fill="#8b7860">TX</text>
+    <rect x="600" y="256" width="15" height="9" fill="#5a4a36"/><text x="590" y="264" text-anchor="end" class="pin" fill="#8b7860">RX</text>
+    <rect x="600" y="296" width="15" height="9" fill="#c9a227"/><text x="590" y="304" text-anchor="end" class="pin">D1</text><text x="562" y="304" text-anchor="end" class="pinsm">GPIO5</text>
+    <rect x="600" y="336" width="15" height="9" fill="#c9a227"/><text x="590" y="344" text-anchor="end" class="pin">D2</text><text x="562" y="344" text-anchor="end" class="pinsm">GPIO4</text>
+    <rect x="600" y="376" width="15" height="9" fill="#c9a227"/><text x="590" y="384" text-anchor="end" class="pin">D3</text><text x="562" y="384" text-anchor="end" class="pinsm">GPIO0</text>
+    <rect x="600" y="416" width="15" height="9" fill="#5a4a36"/><text x="590" y="424" text-anchor="end" class="pin" fill="#8b7860">D4</text><text x="562" y="424" text-anchor="end" class="pinsm">LED</text>
+    <rect x="600" y="456" width="15" height="9" fill="#c9a227"/><text x="590" y="464" text-anchor="end" class="pin">GND</text>
+    <rect x="600" y="476" width="15" height="9" fill="#c9a227"/><text x="590" y="484" text-anchor="end" class="pin">5V</text>
+  </g>
+
+  <!-- ============ INMP441 ============ -->
+  <rect x="60" y="300" width="160" height="250" rx="8" fill="#2d231a" stroke="#c9a227" stroke-width="2"/>
+  <text x="140" y="324" text-anchor="middle" class="lbl" font-size="13" fill="#f2e8d9" font-weight="600">INMP441</text>
+  <text x="140" y="340" text-anchor="middle" class="pinsm">I2S MEMS mic</text>
+  <circle cx="110" cy="440" r="16" fill="#120c08" stroke="#3f3125"/>
+  <text x="110" y="472" text-anchor="middle" class="pinsm">port</text>
+  <g>
+    <rect x="220" y="336" width="12" height="9" fill="#c9a227"/><text x="212" y="344" text-anchor="end" class="pin">WS</text>
+    <rect x="220" y="376" width="12" height="9" fill="#c9a227"/><text x="212" y="384" text-anchor="end" class="pin">SD</text>
+    <rect x="220" y="416" width="12" height="9" fill="#c9a227"/><text x="212" y="424" text-anchor="end" class="pin">SCK</text>
+    <rect x="220" y="456" width="12" height="9" fill="#c9a227"/><text x="212" y="464" text-anchor="end" class="pin">L/R</text>
+    <rect x="220" y="476" width="12" height="9" fill="#c9a227"/><text x="212" y="484" text-anchor="end" class="pin">VDD</text>
+    <rect x="220" y="516" width="12" height="9" fill="#c9a227"/><text x="212" y="524" text-anchor="end" class="pin">GND</text>
+  </g>
+
+  <!-- mic wires -->
+  <path d="M 232 340 L 365 340" class="wire" stroke="#e08a3c"/>
+  <path d="M 232 380 L 365 380" class="wire" stroke="#8ba645"/>
+  <path d="M 232 420 L 365 420" class="wire" stroke="#5b9bd5"/>
+  <path d="M 232 480 L 365 480" class="wire" stroke="#d0453a"/>
+  <!-- L/R tied to the mic's GND -->
+  <path d="M 232 460 L 262 460 L 262 520" class="wire" stroke="#9a8f80"/>
+  <circle cx="262" cy="520" r="4.5" fill="#9a8f80"/>
+  <!-- mic GND -> board GND (under the board) -->
+  <path d="M 232 520 L 262 520 L 262 580 L 650 580 L 650 460 L 615 460" class="wire" stroke="#9a8f80"/>
+  <text x="270" y="300" class="pinsm" fill="#e08a3c">WS → D5</text>
+  <text x="270" y="374" class="pinsm" fill="#8ba645">SD → D6</text>
+  <text x="270" y="414" class="pinsm" fill="#5b9bd5">SCK → D7 (not D8!)</text>
+  <text x="270" y="474" class="pinsm" fill="#d0453a">VDD → 3V3</text>
+  <text x="270" y="514" class="pinsm" fill="#9a8f80">L/R → GND</text>
+  <path d="M 288 304 L 288 336" stroke="#e08a3c" stroke-width="1" stroke-dasharray="2 3"/>
+
+  <!-- ============ microSD MODULE ============ -->
+  <rect x="760" y="210" width="170" height="300" rx="8" fill="#2d231a" stroke="#c9a227" stroke-width="2"/>
+  <text x="845" y="452" text-anchor="middle" class="lbl" font-size="13" fill="#f2e8d9" font-weight="600">microSD module</text>
+  <text x="845" y="468" text-anchor="middle" class="pinsm">SPI · FAT32 card ≤ 32 GB</text>
+  <rect x="800" y="478" width="90" height="26" rx="3" fill="#120c08" stroke="#3f3125"/>
+  <text x="845" y="495" text-anchor="middle" class="pinsm">card slot</text>
+  <g>
+    <rect x="748" y="236" width="12" height="9" fill="#c9a227"/><text x="768" y="244" class="pin">MISO</text><text x="810" y="244" class="pinsm">(DO)</text>
+    <rect x="748" y="296" width="12" height="9" fill="#c9a227"/><text x="768" y="304" class="pin">SCK</text><text x="810" y="304" class="pinsm">(CLK)</text>
+    <rect x="748" y="336" width="12" height="9" fill="#c9a227"/><text x="768" y="344" class="pin">MOSI</text><text x="810" y="344" class="pinsm">(DI)</text>
+    <rect x="748" y="376" width="12" height="9" fill="#c9a227"/><text x="768" y="384" class="pin">CS</text>
+    <rect x="748" y="416" width="12" height="9" fill="#5a4a36"/>
+    <rect x="748" y="456" width="0" height="0" fill="none"/>
+  </g>
+  <!-- GND / VCC on the module's lower edge pins -->
+  <rect x="736" y="456" width="24" height="9" fill="#c9a227"/><text x="700" y="452" text-anchor="end" class="pinsm" fill="#9a8f80">GND</text>
+  <rect x="736" y="476" width="24" height="9" fill="#c9a227"/><text x="700" y="494" text-anchor="end" class="pinsm" fill="#d0453a">VCC → 5V</text>
+
+  <!-- SD wires -->
+  <path d="M 615 300 L 748 300" class="wire" stroke="#4fb3c8"/>
+  <path d="M 615 340 L 748 340" class="wire" stroke="#a77bd6"/>
+  <path d="M 615 380 L 748 380" class="wire" stroke="#d6c13c"/>
+  <path d="M 615 460 L 736 460" class="wire" stroke="#9a8f80"/>
+  <path d="M 615 480 L 736 480" class="wire" stroke="#d0453a"/>
+  <!-- MISO -> D0, over the top of the board -->
+  <path d="M 748 240 L 700 240 L 700 140 L 340 140 L 340 300 L 365 300" class="wire" stroke="#e46fa0"/>
+  <text x="520" y="132" text-anchor="middle" class="pinsm" fill="#e46fa0">MISO → D0</text>
+  <text x="682" y="292" text-anchor="middle" class="pinsm" fill="#4fb3c8">SCK → D1</text>
+  <text x="682" y="332" text-anchor="middle" class="pinsm" fill="#a77bd6">MOSI → D2</text>
+  <text x="682" y="372" text-anchor="middle" class="pinsm" fill="#d6c13c">CS → D3</text>
+
+  <!-- ============ NOTES ============ -->
+  <text x="40" y="626" class="hdr">Notes</text>
+  <text x="40" y="650" class="note">• Mic pins D5/D6/D7 are fixed by the ESP8266's I2S hardware. Power the INMP441 from 3V3 only. Tie L/R to GND (left channel). Keep the mic wires short (≤ 15 cm).</text>
+  <text x="40" y="672" class="note">• SD module VCC goes on 5V: its AMS1117 regulator needs ~1 V of headroom (on 3V3 the card gets ~2.3 V). 5V is only live on USB or an external 5 V supply.</text>
+  <text x="40" y="694" class="note">• The card runs on software SPI (D0–D3) because hardware SPI shares D5–D7 with the mic. CS on D3 is pulled high at boot, so the card stays deselected.</text>
+  <text x="40" y="716" class="note">• Card: FAT32 (or FAT16), 32 GB or smaller. exFAT cards (most 64 GB+) must be reformatted as FAT32.</text>
+  <text x="40" y="738" class="note">• Onboard LED (D4) = status: 1 Hz blink setup mode · flash per chime · lit while writing the card or recording a chime · double blip every 3 s = no card.</text>
+  <text x="40" y="760" class="note">• Mic SCK on D8 is a known mistake: D8 is the I2S OUTPUT clock and stays silent (Microphone panel says "no data"). Free pins: A0, D8 (LOW at boot).</text>
+</svg>
