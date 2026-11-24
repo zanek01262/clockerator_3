@@ -144,6 +144,8 @@ void loadSettings() {
   if (settings.levelSec > 60)  settings.levelSec   = DEF_LEVEL_SEC;
   if (!(settings.threshold > 0.0f)) settings.threshold = DEF_THRESHOLD;
   if (!(settings.riseDb >= 0.0f && settings.riseDb <= 30.0f)) settings.riseDb = DEF_RISE_DB;
+  if (settings.refractoryMs < 100 || settings.refractoryMs > 10000) settings.refractoryMs = DEF_REFRACTORY_MS;
+  if (!(settings.toneRatio >= 0.01f && settings.toneRatio <= 1.0f)) settings.toneRatio = DEF_TONE_RATIO;
   if (settings.recMaxSec < 10 || settings.recMaxSec > 600) settings.recMaxSec = DEF_REC_MAX_S;
   if (settings.eventGapSec < 2 || settings.eventGapSec > 60) settings.eventGapSec = DEF_EVENT_GAP_S;
 }

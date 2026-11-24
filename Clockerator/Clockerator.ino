@@ -262,16 +262,20 @@ static void handleConfigSet() {
     float t = server.arg("threshold").toFloat();
     if (t >= 0.0005f && t <= 20.0f) settings.threshold = t;   // ~28..120 dB SPL
   }
-  if (server.hasArg("refractoryMs"))
-    settings.refractoryMs = (uint32_t)server.arg("refractoryMs").toInt();
+  if (server.hasArg("refractoryMs")) {
+    long r = server.arg("refractoryMs").toInt();      // a negative value would wrap to ~49 days
+    if (r >= 100 && r <= 10000) settings.refractoryMs = (uint32_t)r;
+  }
   if (server.hasArg("riseDb")) {
     float r = server.arg("riseDb").toFloat();
     if (r >= 0.0f && r <= 30.0f) settings.riseDb = r;
   }
   if (server.hasArg("toneEnabled"))
-    settings.toneEnabled = (uint8_t)server.arg("toneEnabled").toInt();
-  if (server.hasArg("toneRatio"))
-    settings.toneRatio = server.arg("toneRatio").toFloat();
+    settings.toneEnabled = server.arg("toneEnabled").toInt() ? 1 : 0;
+  if (server.hasArg("toneRatio")) {
+    float r = server.arg("toneRatio").toFloat();
+    if (r >= 0.01f && r <= 1.0f) settings.toneRatio = r;
+  }
   if (server.hasArg("micChannel")) {
     long c = server.arg("micChannel").toInt();
     if (c >= 0 && c <= 2) settings.micChannel = (uint8_t)c;

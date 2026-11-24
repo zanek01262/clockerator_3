@@ -43,6 +43,17 @@ template <uint8_t P> static inline uint8_t pinRead() {
   if constexpr (P == 16) return (uint8_t)(GP16I & 1); else return (uint8_t)((GPI >> P) & 1);
 }
 
+// While the card is busy: drain the mic, and let the system run. The SD
+// speed test and a card that doesn't answer (SdFat's 2 s init timeout) keep
+// loop() from returning for seconds; without a yield the ESP8266's software
+// watchdog resets the board after ~3 s, and WiFi starves meanwhile.
+// optimistic_yield only yields if 10 ms have passed since the last one. SD
+// work only ever runs in loop context, where yielding is allowed.
+static inline void cardWait() {
+  soundService();
+  optimistic_yield(10000);
+}
+
 class BitBangSpi : public SdSpiBaseClass {
  public:
   void begin(SdSpiConfig) override {
@@ -56,7 +67,7 @@ class BitBangSpi : public SdSpiBaseClass {
   // Single bytes are mostly SdFat polling a busy card: service the mic
   // every 16 polls so a long busy-wait doesn't overrun the I2S DMA.
   uint8_t receive() override {
-    if (++m_polls >= 16) { m_polls = 0; soundService(); }
+    if (++m_polls >= 16) { m_polls = 0; cardWait(); }
     return transfer(0xFF);
   }
   uint8_t receive(uint8_t* buf, size_t count) override {
@@ -69,7 +80,7 @@ class BitBangSpi : public SdSpiBaseClass {
         pinLow<PIN_SD_SCK>();  dly();
       }
       buf[i] = v;
-      if ((i & 63) == 63) soundService();
+      if ((i & 63) == 63) cardWait();
     }
     return 0;
   }
@@ -83,7 +94,7 @@ class BitBangSpi : public SdSpiBaseClass {
         pinHigh<PIN_SD_SCK>(); dly();
         pinLow<PIN_SD_SCK>();
       }
-      if ((i & 63) == 63) soundService();
+      if ((i & 63) == 63) cardWait();
     }
     pinHigh<PIN_SD_MOSI>();
   }

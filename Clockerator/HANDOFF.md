@@ -279,6 +279,9 @@ AP mode: `/`, `/scan`, `/rescan`, `/save`.
 8. **A cached page looks like a frozen device** — hard-refresh after flashing.
 9. **`configTime(offset, …)` has no DST** — use a POSIX TZ rule.
 10. **Validate detector changes on the device**, not just in simulation.
+11. **Anything that keeps loop() from returning for ~3 s resets the board**
+    (software watchdog). The SD driver yields while the card is busy
+    (`cardWait()` in `sdcard.cpp`); keep it that way for any new long job.
 
 ---
 

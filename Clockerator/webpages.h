@@ -28,6 +28,8 @@
 static const char SETUP_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Clockerator &mdash; Setup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13.5' fill='%23231b15' stroke='%23c9a227' stroke-width='3'/%3E%3Cpath d='M16 8.5V16l5 3.5' stroke='%23f2e8d9' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#191310">
 <style>
   /* Brass & Walnut, self-contained. NO external fonts: AP-mode clients
      have no internet and a render-blocking font fetch hangs the page. */
@@ -36,6 +38,7 @@ static const char SETUP_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><
     --ink:#f2e8d9; --dim:#b9a691; --faint:#8b7860;
     --accent:#c9a227; --accent-dim:#7d6418; --accent-soft:rgba(201,162,39,.13);
     --good:#8ba645; --bad:#c1543c;
+    color-scheme:dark;
     --display:Georgia,'Times New Roman',serif;
     --body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   }
@@ -166,6 +169,8 @@ static const char SETUP_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><
 static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Clockerator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13.5' fill='%23231b15' stroke='%23c9a227' stroke-width='3'/%3E%3Cpath d='M16 8.5V16l5 3.5' stroke='%23f2e8d9' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#191310">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -179,6 +184,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
     --accent:#c9a227; --accent-dim:#7d6418; --accent-soft:rgba(201,162,39,.13);
     --good:#8ba645; --warn:#d69128; --bad:#c1543c;
     --radius:10px;
+    color-scheme:dark;
     /* canvas */
     --grid:rgba(201,162,39,.11); --thresh:rgba(214,145,40,.65);
     --trace:#e0c158; --traceglow:rgba(224,193,88,.55); --axis:rgba(201,162,39,.5);
@@ -227,9 +233,10 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
   /* scope */
   .scope{border:1px solid var(--line); border-radius:10px; overflow:hidden;
     background:#120c08; position:relative}
-  canvas{display:block; width:100%; height:210px}
+  canvas{display:block; width:100%; height:200px}   /* = the height drawScope() draws */
   .scopectl{display:flex; align-items:center; gap:10px; margin-top:14px; flex-wrap:wrap}
   .scopectl label{font-size:12px; color:var(--faint); font-weight:500}
+  .scopectl .pair{display:inline-flex; align-items:center; gap:8px}   /* label wraps with its control */
   .scopectl .win{margin-left:auto; font-size:12px; color:var(--faint); font-family:var(--mono)}
 
   /* stat tiles */
@@ -242,6 +249,8 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
     color:var(--faint); font-weight:600; margin-bottom:6px}
   .stat .v{font-family:var(--display); font-size:29px; font-weight:700; color:var(--ink);
     font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .stat .s{font-family:var(--mono); font-size:11.5px; color:var(--faint); margin-top:3px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 
   .hk{font-size:13px; color:var(--dim); font-weight:500}
 
@@ -260,6 +269,10 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
     transition:all .15s; letter-spacing:-.005em; white-space:nowrap}
   button.btn:hover, a.btn:hover{border-color:var(--accent-dim); background:var(--accent-soft); color:var(--accent)}
   button.btn:active{transform:translateY(1px)}
+  button.btn:disabled{opacity:.5; cursor:default; pointer-events:none}
+  /* keyboard focus: visible ring (mouse clicks don't show it) */
+  button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px}
   button.primary{background:var(--accent); border-color:var(--accent); color:#2a2008}
   button.primary:hover{background:#dcb433; border-color:#dcb433; color:#2a2008}
   button.danger{color:#f0a8a3; border-color:rgba(193,84,60,.4)}
@@ -335,6 +348,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
   h1 .ver{font-family:var(--mono); font-size:12px; font-weight:500; color:var(--accent);
     border:1px solid var(--accent-dim); border-radius:20px; padding:2px 9px; letter-spacing:.04em}
   .rec.live{color:#f0a8a3; border-color:rgba(193,84,60,.6)}
+  .rec.live::before{animation:pulse 1s infinite}
 
   /* chime events */
   .recline{display:flex; align-items:center; gap:9px; font-size:13.5px; color:var(--dim); margin-bottom:12px}
@@ -342,6 +356,8 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
   .recdot.on{background:var(--bad); box-shadow:0 0 0 4px rgba(193,84,60,.18); animation:pulse 1s infinite}
   @keyframes pulse{50%{opacity:.35}}
   audio{display:block; width:100%; height:38px; margin-bottom:12px}
+  audio[hidden],.nowplay[hidden]{display:none}
+  .nowplay{font-family:var(--mono); font-size:12px; color:var(--dim); margin:-4px 0 8px}
   .evlist{max-height:340px; overflow:auto; border:1px solid var(--line); border-radius:9px}
   .ev{display:grid; grid-template-columns:76px 72px 1fr auto; align-items:center; gap:8px;
     padding:9px 12px; border-bottom:1px solid rgba(63,49,37,.6)}
@@ -393,22 +409,22 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
 
       <div class="panel">
         <h2 data-help="tt:Live signal|How far the sound rises above the room&rsquo;s background, in real time. Spikes crossing the amber line count as chime candidates.">Live signal</h2>
-        <div class="scope"><canvas id="scope" width="728" height="210"></canvas></div>
+        <div class="scope"><canvas id="scope" width="728" height="200" role="img" aria-label="Live sound level above background, with the chime threshold"></canvas></div>
         <div class="scopectl">
-          <label>Scale</label>
+          <span class="pair"><label for="ymode">Scale</label>
           <select id="ymode">
             <option value="lin">Linear (Pa)</option>
             <option value="log" selected>Log (dB)</option>
-          </select>
-          <label>Y max</label>
+          </select></span>
+          <span class="pair"><label for="yscale">Y max</label>
           <select id="yscale">
             <option value="auto" selected>Auto</option>
             <option value="0.1">0.1 Pa (74 dB)</option>
             <option value="0.3">0.3 Pa (84 dB)</option>
             <option value="1">1 Pa (94 dB)</option>
             <option value="3">3 Pa (104 dB)</option>
-          </select>
-          <label>Window</label>
+          </select></span>
+          <span class="pair"><label for="xwin">Window</label>
           <select id="xwin" data-help="tt:Time window|How much history the plot shows. Shorter windows make individual chimes easier to see; longer ones show the pattern of a whole strike sequence.">
             <option value="400">10 s</option>
             <option value="1200" selected>30 s</option>
@@ -418,21 +434,22 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
             <option value="-900">15 min</option>
             <option value="-1800">30 min</option>
             <option value="-3600">1 hour</option>
-          </select>
-          <span class="win" id="winNote">25ms bins</span>
+          </select></span>
+          <span class="win" id="winNote">25 ms bins</span>
         </div>
         <div class="grid four" style="margin-top:16px">
-          <div class="stat" data-help="tt:Chimes|Chimes detected since the device last booted."><div class="k">Chimes</div><div class="v" id="chimes">0</div></div>
-          <div class="stat"><div class="k">Last chime</div><div class="v" id="last">&mdash;</div></div>
-          <div class="stat" data-help="tt:Level|Current sound level at the microphone in dB SPL. A quiet room reads about 35&ndash;45 dB."><div class="k">Level</div><div class="v" id="lvl">&mdash;</div></div>
-          <div class="stat" data-help="tt:Pitch|Strongest frequency of the last strike, and the nearest musical note. Every strike&rsquo;s pitch is saved in the chime log."><div class="k">Pitch</div><div class="v" id="pitch">&mdash;</div></div>
+          <div class="stat" data-help="tt:Strikes|Strikes detected since the device last started. Each one is a row in the chime log."><div class="k">Strikes</div><div class="v" id="chimes">0</div><div class="s">since start-up</div></div>
+          <div class="stat" data-help="tt:Last strike|How long ago the clock last struck, and that strike&rsquo;s peak level."><div class="k">Last strike</div><div class="v" id="last">&mdash;</div><div class="s" id="lastS">&nbsp;</div></div>
+          <div class="stat" data-help="tt:Level|Current sound level at the microphone in dB SPL, and the room&rsquo;s background level. A quiet room reads about 35&ndash;45 dB."><div class="k">Level</div><div class="v" id="lvl">&mdash;</div><div class="s" id="lvlS">&nbsp;</div></div>
+          <div class="stat" data-help="tt:Pitch|Strongest frequency of the last strike, and the nearest musical note. Every strike&rsquo;s pitch is saved in the chime log."><div class="k">Pitch</div><div class="v" id="pitch">&mdash;</div><div class="s" id="pitchS">&nbsp;</div></div>
         </div>
       </div>
 
       <div class="panel" id="evPanel">
         <h2 data-help="tt:Chime events|Each time the clock chimes, its strikes are grouped into one event (strikes closer together than the event gap) and recorded as a sound clip on the SD card, starting a quarter second before the first strike. Newest first; press &#9654; to listen, &#10515; to download the WAV.">Chime events</h2>
         <div class="recline"><span class="recdot" id="recDot"></span><span id="recMsg">checking&hellip;</span></div>
-        <audio id="player" controls preload="none"></audio>
+        <audio id="player" controls preload="none" hidden></audio>
+        <div class="nowplay" id="nowPlay" hidden></div>
         <div class="evlist" id="evList"><div class="evempty">Loading&hellip;</div></div>
         <div class="actions" style="margin-top:12px">
           <button class="btn" id="recTest" data-help="tt:Test clip|Records 10 seconds right now and plays it back when done &mdash; the quickest way to check the microphone placement and how the clock will sound.">Record 10 s test clip</button>
@@ -446,7 +463,6 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
             <select id="evGap"><option>3</option><option>4</option><option>6</option><option>8</option><option>10</option><option>15</option><option>20</option></select> s</label>
           <label data-help="tt:Longest clip|A recording is split into a new file after this long.">Longest clip
             <select id="recMax"><option>30</option><option>60</option><option>90</option><option>120</option><option>180</option><option>300</option></select> s</label>
-          <span class="saved" id="recSaved">saved &#10003;</span>
         </div>
       </div>
 
@@ -461,7 +477,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
         <div class="ctl">
           <label data-help="tt:Refractory|Dead time after a detected chime before another can register. Prevents one strike counting twice; set it just under the time between strikes.">Refractory</label>
           <input type="range" id="ref" min="200" max="4000" step="100">
-          <output id="refV">1200ms</output>
+          <output id="refV">1200 ms</output>
         </div>
         <div class="ctl">
           <label data-help="tt:Onset rise|A chime must also jump this far above the quietest level of the previous 0.1 s. A real strike rises in a few ms; a strike that is still ringing only fades, so it can&rsquo;t count twice. 0 = off (level only). Lower it if soft strikes are missed.">Onset rise</label>
@@ -510,7 +526,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
           <span>triggers at <b id="mTrgV">&mdash;</b></span>
         </div>
         <div class="gnums sep">
-          <span>last chime <b id="gPeak">&mdash;</b></span>
+          <span>last strike <b id="gPeak">&mdash;</b></span>
           <span>recent <b id="gPeaks">&mdash;</b></span>
         </div>
         <div class="gnums sep" data-help="tt:Audio stream|Frames per second actually received from the mic (should match the rate), the longest stretch between reads, and audio lost in the last second because the processor was busy for longer than the ~22 ms the I2S buffer holds. Occasional small losses are harmless; a strike lasts seconds.">
@@ -531,8 +547,8 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
 
       <div class="panel" id="specPanel">
         <h2 data-help="tt:Spectrum|What the microphone hears, by frequency (50 Hz to 5 kHz, log scale), in dB SPL. Top: the newest tenth of a second. Bottom: a scrolling spectrogram, low notes at the bottom, brighter = louder. A chime shows as bright horizontal lines that fade; dashed lines mark the learned chime pitch.">Spectrum</h2>
-        <div class="scope"><canvas id="spec" width="400" height="150"></canvas></div>
-        <div class="scope specgap"><canvas id="wf" width="400" height="150"></canvas></div>
+        <div class="scope"><canvas id="spec" width="400" height="150" role="img" aria-label="Live spectrum: sound level by frequency"></canvas></div>
+        <div class="scope specgap"><canvas id="wf" width="400" height="150" role="img" aria-label="Spectrogram: frequency over time, brighter is louder"></canvas></div>
         <div class="scopectl">
           <button class="btn primary" id="specGo" data-help="tt:Listen|Starts the live spectrum (about 4 updates a second). It stops by itself after 10 minutes, and while this tab is hidden, to spare the device.">Listen</button>
           <span class="hk" id="specPk">&mdash;</span>
@@ -549,7 +565,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
           <span>waiting <b id="sdPend">&mdash;</b></span>
         </div>
         <div class="gnums sep">
-          <span>chimes saved <b id="sdCh">0</b></span>
+          <span>strikes saved <b id="sdCh">0</b></span>
           <span>events <b id="sdEv">0</b></span>
           <span>level rows <b id="sdLv">0</b></span>
           <span>errors <b id="sdErr">0</b></span>
@@ -573,7 +589,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
           <button class="btn" id="sdBrowse">Browse files</button>
           <button class="btn" id="sdBench" data-help="tt:Speed test|Writes and reads back 256 KB on the card and reports the speed and the slowest single write. Recording needs about 20 KB/s, and the device can ride out a write that stalls for up to ~0.3 s.">Speed test</button>
         </div>
-        <div class="hk" id="benchRes" style="margin-top:10px"></div>
+        <div class="hk" id="sdInfo" style="margin-top:10px" aria-live="polite"></div>
         <div id="sdFiles" class="files" style="display:none"></div>
       </div>
 
@@ -752,7 +768,7 @@ function drawScope(){
       cx.fillText('loading history…',12,h/2);
     }
     cx.fillStyle=CV('--axis');cx.font='12px monospace';
-    cx.fillText(scaleLabel()+'  ·  1s bins',8,14);
+    cx.fillText(scaleLabel()+'  ·  1 s bins',8,14);
     requestAnimationFrame(drawScope);
     return;
   }
@@ -794,11 +810,11 @@ $('xwin').onchange=function(){
   const note=$('winNote');
   if(v<0){                       // history mode: value is -seconds
     histMode=-v; histData=null; fetchHistory();
-    note.textContent=(-v/60)+' min · 1s bins · from device';
+    note.textContent=(-v/60)+' min · 1 s bins · from device';
   }else{
     histMode=0; winBins=v;
     const secs=winBins*BIN_MS/1000;
-    note.textContent=(secs>=60?(secs/60)+' min':secs+' s')+' · 25ms bins';
+    note.textContent=(secs>=60?(secs/60)+' min':secs+' s')+' · 25 ms bins';
   }
 };
 $('ymode').onchange=function(){scaleType=this.value;};
@@ -870,13 +886,20 @@ async function backfill(){
   backfilling=false;
   if(gapLo>=0) setTimeout(backfill,ok?0:2000);   // gaps noted meanwhile, or retry
 }
-let pollBusy=false, pollTimer=0;
+let pollBusy=false, pollTimer=0, pollFails=0;
+// fetch with a time limit: a device that has gone away otherwise leaves the
+// request hanging for minutes and the page showing stale "all fine" values.
+function fetchT(u,ms){
+  const c=new AbortController(),t=setTimeout(()=>c.abort(),ms||4000);
+  return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t));
+}
 async function poll(){
   if(pollBusy) return;
   pollBusy=true; clearTimeout(pollTimer);
   let behind=0;
   try{
-    const s=await (await fetch('/api/state?since='+(newestSeq+1))).json();
+    const s=await (await fetchT('/api/state?since='+(newestSeq+1))).json();
+    pollFails=0;
     behind=ingestScope(s);
     threshold=s.threshold;
     $('chimes').textContent=s.chimes;
@@ -890,9 +913,11 @@ async function poll(){
       }
     }
     $('lvl').textContent=s.level>0?dB(s.level).toFixed(0)+' dB':'—';
+    $('lvlS').textContent=s.ambient>0?'background '+dB(s.ambient).toFixed(0)+' dB':'\u00a0';
     $('pitch').textContent=s.lastHz>0?Math.round(s.lastHz)+' Hz':'—';
-    $('pitch').title=s.lastHz>0?noteOf(s.lastHz):'';
+    $('pitchS').textContent=s.lastHz>0?noteOf(s.lastHz)+' · last strike':'\u00a0';
     $('last').textContent=fmtAge(s.lastChime,s.epoch,!!s.timeValid);
+    $('lastS').textContent=s.lastPeak>0?'peak '+dB(s.lastPeak).toFixed(0)+' dB':'\u00a0';
     if(s.timeValid){
       $('clock').textContent=new Date(s.epoch*1000).toLocaleTimeString();
     }else{
@@ -904,8 +929,13 @@ async function poll(){
     if(s.events!==lastEvents||s.evStrikes!==lastEvStrikes){
       lastEvents=s.events;lastEvStrikes=s.evStrikes;pollEvents();
     }
-    $('fw').textContent='firmware '+s.fw;
-  }catch(e){}
+    $('fw').textContent='firmware '+s.fw+(s.heap?' · '+Math.round(s.heap/1024)+' KB free':'');
+  }catch(e){
+    if(++pollFails>=3){                      // ~1 s of failures: say so
+      const rec=$('rec');rec.className='rec off';rec.textContent='No connection';
+      $('clock').textContent='device offline';
+    }
+  }
   pollBusy=false;
   pollTimer=setTimeout(poll,behind>0?0:200);   // after a stall, catch up immediately
 }
@@ -921,7 +951,7 @@ const ref=$('ref'),refV=$('refV');
 // /api/state); dragging the slider only previews until Apply.
 function showThr(p){thrV.textContent=fmtDb(p);thrPa.textContent=p.toFixed(3)+' Pa above background';}
 thr.oninput=()=>{const p=paOf(+thr.value);showThr(p);thrPreview=p;};
-ref.oninput=()=>{refV.textContent=ref.value+'ms';};
+ref.oninput=()=>{refV.textContent=ref.value+' ms';};
 const rise=$('rise'),riseV=$('riseV');
 rise.oninput=()=>{riseV.textContent=+rise.value?rise.value+' dB':'off';};
 function postCfg(body){
@@ -955,7 +985,7 @@ tzSel.onchange=function(){
 fetch('/api/config').then(r=>r.json()).then(c=>{
   threshold=+c.threshold;
   thr.value=dB(threshold).toFixed(1); showThr(threshold);
-  ref.value=c.refractoryMs;refV.textContent=c.refractoryMs+'ms';
+  ref.value=c.refractoryMs;refV.textContent=c.refractoryMs+' ms';
   rise.value=Math.round(c.riseDb);rise.oninput();
   setSel($('recEn'),c.recEnabled);setSel($('evGap'),c.eventGapSec);setSel($('recMax'),c.recMaxSec);
   $('micCh').value=String(c.micChannel||0);
@@ -973,21 +1003,24 @@ $('lvlSec').onchange=function(){postCfg('levelSec='+this.value).then(j=>{if(j.ok
 
 const learnSt=$('learnSt');
 let learned=[0,0];                 // tone filter pitches, marked on the spectrum
-$('learn').onclick=()=>{
+const learnBtn=$('learn');
+learnBtn.onclick=()=>{
+  learnBtn.disabled=true;
   fetch('/api/learn/start',{method:'POST'}).then(r=>r.json()).then(j=>{
-    if(!j.ok){learnSt.textContent='could not start: '+(j.err||'error');return;}
-    learnSt.textContent='armed — make the clock chime (60s window)';
+    if(!j.ok){learnSt.textContent='could not start: '+(j.err||'error');learnBtn.disabled=false;return;}
+    learnSt.textContent='listening — let the clock strike (60 s)';
     const iv=setInterval(async()=>{
-      const st=await (await fetch('/api/learn/status')).json();
-      if(!st.armed){
-        clearInterval(iv);
+      try{
+        const st=await (await fetch('/api/learn/status')).json();
+        if(st.armed)return;
+        clearInterval(iv);learnBtn.disabled=false;
         learnSt.textContent=st.valid?
           'learned: '+st.f1.toFixed(0)+' Hz'+(st.f2>0?' + '+st.f2.toFixed(0)+' Hz':'')
-          : 'no capture — try again';
+          : 'no strike heard — try again';
         if(st.valid)learned=[st.f1,st.f2];
-      }
+      }catch(e){}
     },1000);
-  });
+  }).catch(()=>{learnSt.textContent='could not start';learnBtn.disabled=false;});
 };
 const toneEn=$('toneEn');
 fetch('/api/learn/status').then(r=>r.json()).then(st=>{
@@ -1035,6 +1068,7 @@ function ago(s){
   return Math.floor(s/3600)+'h ago';
 }
 let sdToday='';
+const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 async function pollSd(){
   try{
     const d=await (await fetch('/api/sd')).json();
@@ -1043,7 +1077,7 @@ async function pollSd(){
     $('sdMsg').textContent=d.ready?(d.msg==='recording'?'Logging to the SD card':d.msg):d.msg;
     $('sdCard').textContent=d.ready?(d.cardMB>=1024?(d.cardMB/1024).toFixed(1)+' GB':d.cardMB+' MB')+' FAT'+d.fat:'—';
     $('sdLast').textContent=d.lastWrite?ago(Math.max(0,d.now-d.lastWrite)):'—';
-    $('sdPend').textContent=d.pending+' chimes, '+d.levelsPending+' levels';
+    $('sdPend').textContent=plural(d.pending,'strike')+', '+plural(d.levelsPending,'level row');
     $('sdCh').textContent=d.chimesSaved+(d.chimesLost?' ('+d.chimesLost+' lost)':'');
     $('sdEv').textContent=d.eventsSaved;
     $('sdLv').textContent=d.levelRows+(d.levelsDropped?' ('+d.levelsDropped+' dropped)':'');
@@ -1124,16 +1158,18 @@ async function openDay(b){
   }catch(e){slot.innerHTML='<div class="fr sub2">failed</div>';}
 }
 $('sdBench').onclick=async()=>{
-  const r=$('benchRes');
+  const r=$('sdInfo'),b=$('sdBench');
+  b.disabled=true;
   r.textContent='testing… (writes and reads 256 KB, a few seconds)';
   try{
     const d=await (await fetch('/api/sd/bench',{method:'POST'})).json();
-    if(!d.ok){r.textContent='speed test failed: '+d.msg;return;}
+    if(!d.ok){r.textContent='speed test failed: '+d.msg;b.disabled=false;return;}
     const verdict=d.writeKBs>=3*d.needKBs&&d.maxStallMs<300?'plenty for recording':
                   d.writeKBs>=d.needKBs?'enough for recording, but tight':'TOO SLOW for recording';
     r.textContent='write '+d.writeKBs+' KB/s · read '+d.readKBs+' KB/s · slowest write '+
       d.maxStallMs+' ms — recording needs '+d.needKBs+' KB/s: '+verdict;
   }catch(e){r.textContent='speed test failed';}
+  b.disabled=false;
 };
 
 // ===== XLSX export (no dependencies) =====
@@ -1220,11 +1256,11 @@ function csvToXlsx(csv,sheetName,fname){
  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
 }
 function dlXlsx(kind){
- const ev=kind==='events', info=$('logInfo');
+ const ev=kind==='events', info=$('sdInfo');
  info.textContent='building workbook…';
  fetch(ev?'/api/events/log':'/api/log').then(r=>r.ok?r.text():Promise.reject()).then(t=>{
    csvToXlsx(t,ev?'Chime events':'Chimes',ev?'chime-events.xlsx':'chimes.xlsx');
-   info.textContent='';
+   info.textContent='workbook downloaded';
  }).catch(()=>{info.textContent='export failed (is the SD card in?)';});
 }
 
@@ -1242,7 +1278,7 @@ function renderLog(text){
   let rows=lines.slice(1).filter(l=>l.length>2);
   const total=rows.length;
   rows=rows.slice(-MAXROWS).reverse();          // newest first
-  let html='<tr>'+head.map(h=>'<th>'+h+'</th>').join('')+'</tr>';
+  let html='<tr>'+head.map(h=>'<th>'+(XSPEC[h]?XSPEC[h].h:h)+'</th>').join('')+'</tr>';
   for(const r of rows) html+='<tr>'+r.split(',').map(x=>'<td>'+x+'</td>').join('')+'</tr>';
   $('logTable').innerHTML=html;
   $('logWrap').style.display='';
@@ -1263,7 +1299,9 @@ const recUrl=p=>getUrl(p);
 const pad2=n=>String(n).padStart(2,'0');
 function play(p){
   if(!p)return;
-  playingRec=p;player.src=recUrl(p);player.play().catch(()=>{});
+  playingRec=p;player.hidden=false;player.src=recUrl(p);player.play().catch(()=>{});
+  const np=$('nowPlay');np.hidden=false;
+  np.textContent='Playing '+p.replace('/recordings/','').replace('/',' · ').replace('.wav','');
   renderEvents();
 }
 player.onended=()=>{playingRec='';renderEvents();};
@@ -1276,18 +1314,22 @@ function evRow(e,now){
            e.n>1?e.dur.toFixed(1)+' s':''].filter(Boolean).join(' · ');
   let act;
   if(now) act='<span class="na">'+(e.rec?'recording…':'')+'</span>';
-  else if(e.rec) act='<button data-rec="'+e.rec+'" title="Play">▶</button><a href="'+recUrl(e.rec)+'&dl=1" title="Download WAV">⤓</a>';
+  else if(e.rec) act='<button data-rec="'+e.rec+'" title="Play" aria-label="Play recording">▶</button>'+
+    '<a href="'+recUrl(e.rec)+'&dl=1" title="Download WAV" aria-label="Download recording">⤓</a>';
   else act='<span class="na">no clip</span>';
   return '<div class="ev'+(now?' now':'')+(e.rec&&e.rec===playingRec?' playing':'')+'">'+
     '<div class="evt">'+tm+'<small>'+(now?'in progress':day)+'</small></div>'+
     '<div class="evn">'+e.n+'<small>'+(e.n===1?'strike':'strikes')+'</small></div>'+
     '<div class="evm">'+m+'</div><div class="eva">'+act+'</div></div>';
 }
+let evHtml='';
 function renderEvents(){
   const list=[...evMap.values()].sort((a,b)=>(b.t*1000+b.ms)-(a.t*1000+a.ms)).slice(0,200);
   const box=$('evList');
-  box.innerHTML=(evOpen?evRow(evOpen,true):'')+list.map(e=>evRow(e,false)).join('')||
+  const h=(evOpen?evRow(evOpen,true):'')+list.map(e=>evRow(e,false)).join('')||
     '<div class="evempty">No chime events since the device started. They appear here as the clock strikes; &ldquo;Load history&rdquo; shows earlier ones.</div>';
+  if(h===evHtml)return;
+  evHtml=h;box.innerHTML=h;
   box.querySelectorAll('button[data-rec]').forEach(b=>b.onclick=()=>play(b.dataset.rec));
 }
 let evBusy=false, evTimer=0;
@@ -1307,18 +1349,26 @@ async function pollEvents(){
     $('recMsg').textContent=active?'Recording '+r.path.split('/').pop()+' · '+r.seconds.toFixed(0)+' s':
       msg+(r.clips?' · '+r.clips+' clip'+(r.clips>1?'s':'')+' since boot':'')+
       (r.lostMs?' · '+r.lostMs+' ms of audio skipped (card too slow?)':'');
-    if(pendingTest&&!active){play(pendingTest);pendingTest='';$('evInfo').textContent='';}
+    if(pendingTest&&!active){play(pendingTest);testDone();}
   }catch(e){}
   evBusy=false;
   evTimer=setTimeout(pollEvents,active||evOpen?1500:5000);
 }
 pollEvents();
-$('recTest').onclick=()=>{
+const recTestBtn=$('recTest');
+function testDone(msg){
+  pendingTest='';recTestBtn.disabled=false;recTestBtn.textContent='Record 10 s test clip';
+  $('evInfo').textContent=msg||'';
+}
+recTestBtn.onclick=()=>{
+  recTestBtn.disabled=true;
   fetch('/api/rec/test',{method:'POST'}).then(r=>r.json()).then(j=>{
-    if(!j.ok){$('evInfo').textContent='could not record: '+j.err;return;}
-    pendingTest=j.path;$('evInfo').textContent='recording 10 s — it plays here when done';
+    if(!j.ok){testDone('could not record: '+j.err);return;}
+    pendingTest=j.path;recTestBtn.textContent='Recording…';
+    $('evInfo').textContent='it plays here when done';
+    setTimeout(()=>{if(pendingTest===j.path)testDone('the test clip did not finish — see the recording status above');},75000);
     pollEvents();
-  }).catch(()=>{$('evInfo').textContent='could not record';});
+  }).catch(()=>testDone('could not record'));
 };
 $('evHist').onclick=()=>{
   $('evInfo').textContent='loading…';
@@ -1338,14 +1388,17 @@ $('evHist').onclick=()=>{
 };
 function recCfg(){
   postCfg('recEnabled='+$('recEn').value+'&eventGapSec='+$('evGap').value+'&recMaxSec='+$('recMax').value)
-    .then(j=>{if(j.ok){flashSaved('recSaved');pollEvents();}});
+    .then(j=>{
+      $('evInfo').textContent=j.ok?'recording settings saved ✓':'could not save the settings';
+      if(j.ok){pollEvents();setTimeout(()=>{if($('evInfo').textContent.indexOf('saved')>0)$('evInfo').textContent='';},2500);}
+    }).catch(()=>{$('evInfo').textContent='could not save the settings';});
 }
 $('recEn').onchange=recCfg;$('evGap').onchange=recCfg;$('recMax').onchange=recCfg;
 
 // ---- Spectrum + spectrogram ----
 const sc=$('spec'),sx=sc.getContext('2d'),wf=$('wf'),wx=wf.getContext('2d');
 const F_LO=50, DB_LO=0, DB_HI=100;
-let specOn=false, specTimer=0, specStop=0, specSr=10000;
+let specOn=false, specTimer=0, specStop=0, specSr=10000, specGen=0;
 let HEAT=null;
 function hexRgb(h){h=h.replace('#','');return [0,2,4].map(i=>parseInt(h.substr(i,2),16));}
 function heat(v){                   // 0..1 along the theme's heat ramp
@@ -1397,24 +1450,38 @@ function drawSpec(d){
   }
   wx.putImageData(img,WW-cw,0);
 }
-async function specPoll(){
-  if(!specOn)return;
+// Placeholder text until the first spectrum arrives.
+function specIdle(){
+  fitSpec(sc);fitSpec(wf);
+  const dpr=window.devicePixelRatio||1;
+  [[sx,sc,'Press Listen to see what the microphone hears'],[wx,wf,'Spectrogram · low notes at the bottom']].forEach(([x,c,t])=>{
+    x.clearRect(0,0,c.width,c.height);
+    x.fillStyle=CV('--axis');x.font=(12*dpr)+'px '+CV('--body');x.textAlign='center';
+    x.fillText(t,c.width/2,c.height/2+4*dpr);x.textAlign='start';
+  });
+}
+specIdle();
+// `gen` ties a polling loop to one press of Listen: Stop + Listen while a
+// request is in flight must not leave two loops running.
+async function specPoll(gen){
+  if(!specOn||gen!==specGen)return;
   if(Date.now()>specStop){specToggle(false);return;}
   if(!document.hidden){
     try{
       const d=await (await fetch('/api/spectrum')).json();
-      if(d.ok){
+      if(d.ok&&gen===specGen){
         specSr=d.sr;drawSpec(d);
         $('specPk').textContent=d.peakHz>0?'peak '+d.peakHz.toFixed(1)+' Hz '+noteOf(d.peakHz)+' · '+d.peakDb.toFixed(0)+' dB':'—';
       }
     }catch(e){}
   }
-  if(specOn)specTimer=setTimeout(specPoll,document.hidden?1000:250);
+  if(specOn&&gen===specGen)specTimer=setTimeout(()=>specPoll(gen),document.hidden?1000:250);
 }
 function specToggle(on){
-  specOn=on;clearTimeout(specTimer);
+  specOn=on;specGen++;clearTimeout(specTimer);
   $('specGo').textContent=on?'Stop':'Listen';
-  if(on){specStop=Date.now()+600000;specPoll();}
+  if(on){specStop=Date.now()+600000;specPoll(specGen);}
+  else{const pk=$('specPk');if(pk.textContent!=='—'&&!/stopped\)$/.test(pk.textContent))pk.textContent+=' (stopped)';}
 }
 $('specGo').onclick=()=>specToggle(!specOn);
 
