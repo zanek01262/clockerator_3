@@ -338,6 +338,15 @@ Recordings take roughly 10–40 MB a day, depending on how often the clock
 chimes, so a 32 GB card lasts years. The device never deletes anything; pull
 the card and tidy it on a PC when needed.
 
+**Without a card** the Clockerator still runs: it detects and counts strikes,
+measures pitch, groups events, and the whole live dashboard works (WiFi and
+settings live in the D1 mini's own flash). It just saves nothing: no logs and
+no recordings. The SD panel says so and shows when it will look for a card
+next. It tries a few times 30 s apart, then every 5 minutes. After putting a
+card in, press **Check now** in the SD panel to start logging straight away
+(no reboot needed). The most recent strikes (up to 48) are held in memory
+meanwhile and written once the card is found.
+
 ---
 
 ## Troubleshooting
@@ -348,7 +357,7 @@ the card and tidy it on a PC when needed.
 | Microphone panel: **"clipping"** with no sound | floating data line | Check `SD` → D6 and `SCK` → D7 solder joints. |
 | Microphone panel: **"too quiet"** (< 25 dB) | data misaligned, or the wrong half-word | Try the *Channel* selector (low/high half), then recheck the wiring. |
 | Recordings sound sped up or slowed down | the mic isn't doubling samples as assumed | Note the **repeats %** and see [HANDOFF.md §6](Clockerator/HANDOFF.md#6-how-the-audio-works). |
-| SD panel: *"no card, or card not answering"* | power or wiring | SD `VCC` on **5V** (on USB power), `CS` D3, `SCK` D1, `MOSI` D2, `MISO` D0. Reseat the card. |
+| SD panel: *"no card, or card not answering"* | power or wiring | SD `VCC` on **5V** (on USB power), `CS` D3, `SCK` D1, `MOSI` D2, `MISO` D0. Reseat the card, then press **Check now**. |
 | SD panel: *"not FAT32/FAT16 (exFAT?)"* | card format | Reformat as FAT32 (cards over 32 GB need a FAT32 tool, or use a smaller card). |
 | Writes fail now and then | supply sagging, or a slow/old card | Better USB supply or cable, 100 µF across 5V–GND, a different card. Check **Speed test**. |
 | Board won't boot or upload with the modules attached | something holding a boot pin | D3/D4 must be HIGH and D8 LOW at boot. Check nothing extra is on D3/D4/D8 and that `MISO` isn't on them. |

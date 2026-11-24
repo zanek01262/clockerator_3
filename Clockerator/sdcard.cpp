@@ -136,6 +136,7 @@ static const char SYSTEM_HEADER[] = "date,time,event,detail\n";
 
 static bool        g_ready = false;
 static bool        g_hadError = false;
+static uint8_t     g_mountFails = 0;      // in a row; picks the retry interval
 static uint32_t    g_lastTry = 0, g_lastFlushMs = 0, g_lastFlushEpoch = 0;
 static uint32_t    g_cardMB = 0;
 static uint8_t     g_fatType = 0;
@@ -169,26 +170,29 @@ static void fatDateTime(uint16_t* date, uint16_t* tim) {
 // =====================================================================
 static bool ensureDir(const char* d) { return g_sd.exists(d) || g_sd.mkdir(d); }
 
+static bool mountFailed(const char* msg) {
+  g_msg = msg;
+  if (g_mountFails < 255) g_mountFails++;
+  return false;
+}
+
 static bool mount() {
-  g_ready = false;
+  g_ready   = false;
+  g_lastTry = millis();
   if (!g_sd.cardBegin(SD_CONFIG)) {
     snprintf(g_msgBuf, sizeof(g_msgBuf),
              "no card, or card not answering (SD error 0x%02X)", g_sd.sdErrorCode());
-    g_msg = g_msgBuf;
-    return false;
+    return mountFailed(g_msgBuf);
   }
-  if (!g_sd.volumeBegin()) {
-    g_msg = "card found but it is not FAT32/FAT16 (exFAT?): format it as FAT32";
-    return false;
-  }
+  if (!g_sd.volumeBegin())
+    return mountFailed("card found but it is not FAT32/FAT16 (exFAT?): format it as FAT32");
   if (!ensureDir(SD_CHIME_DIR) || !ensureDir(SD_EVENT_DIR) ||
-      !ensureDir(SD_LEVEL_DIR) || !ensureDir(SD_REC_DIR)) {
-    g_msg = "card mounted but folders could not be created";
-    return false;
-  }
+      !ensureDir(SD_LEVEL_DIR) || !ensureDir(SD_REC_DIR))
+    return mountFailed("card mounted but folders could not be created");
   g_cardMB  = g_sd.card()->sectorCount() / 2048UL;
   g_fatType = g_sd.fatType();
   g_ready   = true;
+  g_mountFails = 0;
   g_msg     = "recording";
 
   char d[48];
@@ -201,7 +205,6 @@ static bool mount() {
 
 void sdBegin() {
   FsDateTime::setCallback(fatDateTime);
-  g_lastTry = millis();
   if (!mount()) Serial.printf("[SD] %s\n", g_msg);
 }
 
@@ -209,18 +212,34 @@ bool sdReady() { return g_ready; }
 SdFat32& sdFs() { return g_sd; }
 void sdSetActivityCallback(void (*cb)(bool)) { g_activity = cb; }
 
+static uint32_t retryInterval() {
+  return g_mountFails < SD_RETRY_FAST_N ? SD_RETRY_MS : SD_RETRY_SLOW_MS;
+}
+
 void sdFail(const char* msg) {
   g_writeErrors++;
-  g_hadError = true;
-  g_ready    = false;                 // re-mount on the next retry
-  g_lastTry  = millis();
-  snprintf(g_msgBuf, sizeof(g_msgBuf), "%s - retrying every 30 s", msg);
+  g_hadError    = true;
+  g_ready       = false;              // re-mount on the next retry
+  g_lastTry     = millis();
+  g_mountFails  = 0;                  // it was working: likely pulled out, retry soon
+  strlcpy(g_msgBuf, msg, sizeof(g_msgBuf));
   g_msg = g_msgBuf;
+}
+
+bool sdRetryNow() {
+  if (g_ready) return true;
+  if (!mount()) Serial.printf("[SD] %s\n", g_msg);
+  return g_ready;
 }
 
 SdLogStatus sdGetStatus() {
   SdLogStatus s;
   s.ready          = g_ready;
+  s.retryInS       = 0;
+  if (!g_ready) {
+    uint32_t since = millis() - g_lastTry, iv = retryInterval();
+    s.retryInS = since >= iv ? 0 : (iv - since + 999) / 1000;
+  }
   s.msg            = (g_ready && !sdTimeOk()) ? "card ready, waiting for NTP time" : g_msg;
   s.cardMB         = g_cardMB;
   s.fatType        = g_fatType;
@@ -430,10 +449,7 @@ static void flush() {
 
 void sdService() {
   uint32_t now = millis();
-  if (!g_ready && (uint32_t)(now - g_lastTry) >= SD_RETRY_MS) {
-    g_lastTry = now;
-    mount();
-  }
+  if (!g_ready && (uint32_t)(now - g_lastTry) >= retryInterval()) mount();
   if (!g_ready || !sdTimeOk()) return;
   bool due = (uint32_t)(now - g_lastFlushMs) >= SD_FLUSH_MS
           || g_cqN >= SD_CHIME_QUEUE / 2

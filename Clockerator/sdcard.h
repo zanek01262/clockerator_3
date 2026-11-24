@@ -12,7 +12,9 @@
    Rows are queued in RAM and appended every SD_FLUSH_MS (sooner if a
    queue fills). Files are opened, appended and closed on each flush, so
    between flushes the card can be removed; a missing or failed card is
-   re-mounted every SD_RETRY_MS and the queued rows are written then.
+   re-mounted SD_RETRY_MS apart for SD_RETRY_FAST_N tries, then every
+   SD_RETRY_SLOW_MS (or at once via sdRetryNow), and the queued rows are
+   written then.
    Nothing is written until NTP time is valid (rows need timestamps).
    ===================================================================== */
 #ifndef SDCARD_H
@@ -34,18 +36,23 @@ struct SdLogStatus {
   uint32_t    chimesLost;     // dropped because the queue was full
   uint8_t     chimesPending;
   uint32_t    lastFlushEpoch; // 0 = none yet
+  uint32_t    retryInS;       // no card: seconds to the next mount attempt
 };
 
 void     sdBegin();           // mount the card (failure is not fatal)
 void     sdService();         // loop(): flush when due, re-mount when missing
 bool     sdReady();
+// Try to mount a missing card now instead of at the next scheduled retry
+// (may block ~3 s when no card answers). True if a card is mounted.
+bool     sdRetryNow();
 bool     sdTimeOk();          // NTP time is valid (needed for every file name/row)
 SdLogStatus sdGetStatus();
 // Called with true/false around each flush (drives the status LED).
 void     sdSetActivityCallback(void (*cb)(bool busy));
 
 // For the recorder: the mounted volume, and how to report a failed write
-// (the card is re-mounted SD_RETRY_MS later).
+// (the card is re-mounted SD_RETRY_MS later: it was in use, so the fast
+// retries start over).
 SdFat32& sdFs();
 void     sdFail(const char* msg);
 

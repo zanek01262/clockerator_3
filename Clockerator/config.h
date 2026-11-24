@@ -133,7 +133,14 @@ static const IPAddress AP_IP(192, 168, 4, 1);
 // loses at most that much. The card is closed between flushes and clips, so
 // it can be pulled when the status LED is dark (it is lit while writing).
 #define SD_FLUSH_MS          30000UL
-#define SD_RETRY_MS          30000UL   // re-mount attempt after a missing/failed card
+// Re-mount attempts after a missing/failed card: SD_RETRY_FAST_N tries
+// SD_RETRY_MS apart (a card being swapped), then every SD_RETRY_SLOW_MS. A
+// try with no card can block loop() for up to ~3 s (SdFat's CMD0 retries
+// when MISO floats low), so a card-less device mustn't pay that every 30 s.
+// The page's "Check now" button tries at once.
+#define SD_RETRY_MS          30000UL
+#define SD_RETRY_FAST_N      4
+#define SD_RETRY_SLOW_MS     300000UL
 #define SD_CHIME_QUEUE       48        // strikes waiting for the next flush
 #define SD_SYSTEM_QUEUE      8
 

@@ -542,19 +542,27 @@ static void handleSd() {
     localtime_r(&now, &tmv);
     strftime(today, sizeof(today), "%Y-%m-%d", &tmv);
   }
-  char buf[460];
+  char buf[500];
   snprintf_P(buf, sizeof(buf), PSTR(
-    "{\"ready\":%d,\"msg\":\"%s\",\"cardMB\":%lu,\"fat\":%u,\"chimesSaved\":%lu,"
+    "{\"ready\":%d,\"msg\":\"%s\",\"retryIn\":%lu,\"cardMB\":%lu,\"fat\":%u,\"chimesSaved\":%lu,"
     "\"eventsSaved\":%lu,\"levelRows\":%lu,\"errors\":%lu,\"chimesLost\":%lu,\"pending\":%u,"
     "\"levelsPending\":%u,\"levelsDropped\":%lu,\"lastWrite\":%lu,\"now\":%lu,"
     "\"today\":\"%s\",\"levelSec\":%u}"),
-    sd.ready ? 1 : 0, sd.msg, (unsigned long)sd.cardMB, (unsigned)sd.fatType,
+    sd.ready ? 1 : 0, sd.msg, (unsigned long)sd.retryInS, (unsigned long)sd.cardMB,
+    (unsigned)sd.fatType,
     (unsigned long)sd.chimesSaved, (unsigned long)sd.eventsSaved, (unsigned long)sd.levelRows,
     (unsigned long)sd.writeErrors, (unsigned long)sd.chimesLost,
     (unsigned)sd.chimesPending, (unsigned)soundLevelsPending(),
     (unsigned long)soundLevelsDropped(), (unsigned long)sd.lastFlushEpoch,
     (unsigned long)time(nullptr), today, (unsigned)settings.levelSec);
   server.send(200, "application/json", buf);
+}
+
+// "Check now" on the SD panel: mount a card that was just inserted instead
+// of waiting for the next scheduled retry. The page then re-reads /api/sd.
+static void handleSdRetry() {
+  bool ok = sdRetryNow();
+  server.send(200, "application/json", ok ? "{\"ready\":1}" : "{\"ready\":0}");
 }
 
 static void handleSdBench() {
@@ -691,6 +699,7 @@ static bool startSTAMode() {
   server.on("/api/history",      handleHistory);
   server.on("/api/sd",           handleSd);
   server.on("/api/sd/bench",     HTTP_POST, handleSdBench);
+  server.on("/api/sd/retry",     HTTP_POST, handleSdRetry);
   server.on("/api/sd/files",     handleSdFiles);
   server.on("/api/sd/get",       handleSdGet);
   server.on("/api/reset",        HTTP_POST, handleReset);

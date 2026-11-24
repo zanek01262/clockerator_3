@@ -215,6 +215,14 @@ the card then. Card budget: ~10–40 MB/day of recordings depending on how
 often the clock chimes; a 32 GB card lasts years. A full card shows as a
 recording/write error in the SD panel.
 
+No card is a normal state, not an error path: detection, events and the live
+page run from RAM, and the CSV queues are bounded (48 strikes, oldest dropped
+and counted as `chimesLost`). A missing card is re-mounted 30 s apart for 4
+tries (`SD_RETRY_FAST_N`), then every 5 min (`SD_RETRY_SLOW_MS`); a write
+error starts the fast tries over. The slow rate matters because a try with no
+card can block `loop()` ~3 s (SdFat sends CMD0 10× with a 300 ms busy-wait
+each when MISO floats low). `POST /api/sd/retry` ("Check now") tries at once.
+
 ---
 
 ## 8. HTTP API (STA mode)
@@ -236,7 +244,8 @@ recording/write error in the SD panel.
 | `/api/learn/start` | POST | arm "Learn chime" (next strike's pitch, 60 s) |
 | `/api/learn/status` | GET | armed, valid, f1, f2, saved1, saved2, enabled, ratio |
 | `/api/history?n=` | GET | 1 s plot history |
-| `/api/sd` | GET | card status and counters |
+| `/api/sd` | GET | card status and counters; `retryIn` = seconds to the next mount try when there is no card |
+| `/api/sd/retry` | POST | try to mount a missing card now ("Check now") |
 | `/api/sd/bench` | POST | 256 KB write/read speed test |
 | `/api/sd/files[?m=YYYY-MM]` | GET | CSV listing |
 | `/api/sd/get?f=<path>[&dl=1]` | GET | a file; WAV inline with Range support (Safari needs it) |

@@ -324,6 +324,9 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
   .sdstate.on .dot{background:var(--good); box-shadow:0 0 0 4px rgba(139,166,69,.15)}
   .sdstate.off .dot{background:var(--bad); box-shadow:0 0 0 4px rgba(193,84,60,.15)}
   .sdstate.off{color:#e08a7a}
+  .sdstate .sdtxt{flex:1; min-width:0}
+  .sdstate .nx{color:var(--faint); font-weight:500; font-size:13px; white-space:nowrap}
+  .sdstate .btn{padding:5px 12px; font-size:12.5px; flex:none}
   .files{margin-top:14px; max-height:300px; overflow:auto; border:1px solid var(--line); border-radius:9px}
   .files .fh{padding:8px 12px; font-size:11px; letter-spacing:.05em; text-transform:uppercase;
     color:var(--dim); font-weight:600; background:var(--panel2); border-bottom:1px solid var(--line)}
@@ -558,7 +561,10 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
 
       <div class="panel" id="sdPanel">
         <h2 data-help="tt:SD card|Long-term records, saved every 30 seconds as CSV files that open in Excel straight off the card: one chime file and one event file per month, one level file per day (in a folder per month), and system.csv (boots, WiFi drops, card events). Recordings are WAV files, one folder per day.">SD card</h2>
-        <div class="sdstate" id="sdState"><span class="dot"></span><span id="sdMsg">checking&hellip;</span></div>
+        <div class="sdstate" id="sdState"><span class="dot"></span>
+          <span class="sdtxt"><span id="sdMsg">checking&hellip;</span> <span class="nx" id="sdNext"></span></span>
+          <button class="btn" id="sdRetry" hidden data-help="tt:Check now|Looks for a card right away. With no card the device checks by itself every 30 s at first, then every 5 minutes, so a card put in later is found without this button too.">Check now</button>
+        </div>
         <div class="gnums">
           <span>card <b id="sdCard">&mdash;</b></span>
           <span>last write <b id="sdLast">&mdash;</b></span>
@@ -1069,12 +1075,15 @@ function ago(s){
 }
 let sdToday='';
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
-async function pollSd(){
+const inTime=s=>s<60?s+' s':Math.ceil(s/60)+' min';
+async function sdRefresh(){
   try{
     const d=await (await fetch('/api/sd')).json();
     const st=$('sdState');
     st.className='sdstate '+(d.ready?'on':'off');
     $('sdMsg').textContent=d.ready?(d.msg==='recording'?'Logging to the SD card':d.msg):d.msg;
+    $('sdNext').textContent=d.ready?'':(d.retryIn?'· next check in '+inTime(d.retryIn):'· checking…');
+    $('sdRetry').hidden=!!d.ready;
     $('sdCard').textContent=d.ready?(d.cardMB>=1024?(d.cardMB/1024).toFixed(1)+' GB':d.cardMB+' MB')+' FAT'+d.fat:'—';
     $('sdLast').textContent=d.lastWrite?ago(Math.max(0,d.now-d.lastWrite)):'—';
     $('sdPend').textContent=plural(d.pending,'strike')+', '+plural(d.levelsPending,'level row');
@@ -1089,9 +1098,20 @@ async function pollSd(){
       a.style.opacity=1;
     }else{a.removeAttribute('href');a.style.opacity=.45;}
   }catch(e){}
-  setTimeout(pollSd,5000);
 }
+async function pollSd(){await sdRefresh();setTimeout(pollSd,5000);}
 pollSd();
+$('sdRetry').onclick=async()=>{
+  const b=$('sdRetry'),r=$('sdInfo');
+  b.disabled=true;b.textContent='Checking…';
+  r.textContent='';
+  try{
+    const d=await (await fetch('/api/sd/retry',{method:'POST'})).json();
+    await sdRefresh();
+    r.textContent=d.ready?'Card found.':'No card found. Check it is pushed in fully and formatted FAT32.';
+  }catch(e){r.textContent='Could not reach the device.';}
+  b.disabled=false;b.textContent='Check now';
+};
 const getUrl=p=>'/api/sd/get?f='+encodeURIComponent(p);
 function fileRow(path,name,size,cls){
   return '<div class="fr'+(cls?' '+cls:'')+'"><a href="'+getUrl(path)+'">'+name+'</a><span class="sz">'+fmtBytes(size)+'</span></div>';
