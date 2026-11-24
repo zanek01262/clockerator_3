@@ -29,8 +29,8 @@
                           pin is only live on USB or an external 5 V supply.
        GND         -> GND
    The module's 74LVC125A drives MISO at 3.3 V, so no level shifting.
-   Card: FAT32 (or FAT16), 32 GB or smaller. exFAT is not supported by
-   the SdFat build bundled with the ESP8266 core.
+   Card: FAT32, FAT16 or exFAT, any size. Cards over 32 GB (SDXC) come
+   formatted exFAT and work as they come.
 
    Onboard LED: D4 (GPIO2, active LOW) — status light.
    A0 and D8 are free. D8 (GPIO15) must be LOW at boot, so don't hang
@@ -65,8 +65,9 @@
 //         chime to SD (with pre-roll), live spectrum, pitch of every strike,
 //         strikes grouped into chime events, onset (rise) detection so a
 //         ringing strike can't re-trigger, SD speed test, mic diagnostics
+//   3.1.0 exFAT cards (SDXC, 64 GB and up) work without reformatting
 #define PRODUCT_NAME "Clockerator"
-#define FW_VERSION   "3.0.0"
+#define FW_VERSION   "3.1.0"
 
 // ---------- SoftAP provisioning ----------
 #define AP_SSID  "Clockerator-Setup"

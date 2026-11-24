@@ -70,9 +70,14 @@ D0–D3 (`sdcard.cpp`, direct register writes; `Clockerator.ino.globals.h`
 builds the bundled SdFat with `SPI_DRIVER_SELECT 3` so it uses that driver).
 Never move the card onto D5–D8.
 
-**Open question from the wiring session:** the mic's SCK was first soldered to
-D8 and was to be moved to D7 — not yet confirmed. If the Microphone panel says
-"no data", check that first.
+**Card formats (3.1.0):** the SD code uses SdFat's `SdFs` / `FsFile`, which
+read FAT16, FAT32 and exFAT, so SDXC cards (64 GB and up, sold as exFAT) work
+without reformatting. The FAT-only `SdFat32` / `File32` would save ~8 KB of
+flash and 28 bytes per open file, but reject those cards.
+
+**Wiring confirmed:** the mic's SCK was first soldered to D8; the board now
+runs and the user reports it working well (2026-11-24), so it is on D7. If
+the Microphone panel ever says "no data", check that first.
 
 ---
 
@@ -267,6 +272,10 @@ AP mode: `/`, `/scan`, `/rescan`, `/save`.
   a mock device: events list, player, test-clip flow, spectrum/spectrogram,
   recordings browser, speed test, phone width (375 px, no horizontal scroll).
   A WAV with the firmware's exact 512-byte header played with the right length.
+
+**On the board:** the user reports 3.0.0 running and working well
+(2026-11-24). The specific figures below haven't been reported yet. exFAT
+(3.1.0) compiles but hasn't been tried with an exFAT card.
 
 **Not verified — needs the real board:**
 - I2S framing with 32 clocks/frame (§6), channel auto-pick, the repeats figure.

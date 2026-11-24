@@ -81,7 +81,7 @@
   <!-- ============ microSD MODULE ============ -->
   <rect x="760" y="210" width="170" height="300" rx="8" fill="#2d231a" stroke="#c9a227" stroke-width="2"/>
   <text x="845" y="452" text-anchor="middle" class="lbl" font-size="13" fill="#f2e8d9" font-weight="600">microSD module</text>
-  <text x="845" y="468" text-anchor="middle" class="pinsm">SPI · FAT32 card ≤ 32 GB</text>
+  <text x="845" y="468" text-anchor="middle" class="pinsm">SPI · FAT32 or exFAT card</text>
   <rect x="800" y="478" width="90" height="26" rx="3" fill="#120c08" stroke="#3f3125"/>
   <text x="845" y="495" text-anchor="middle" class="pinsm">card slot</text>
   <g>
@@ -114,7 +114,7 @@
   <text x="40" y="650" class="note">• Mic pins D5/D6/D7 are fixed by the ESP8266's I2S hardware. Power the INMP441 from 3V3 only. Tie L/R to GND (left channel). Keep the mic wires short (≤ 15 cm).</text>
   <text x="40" y="672" class="note">• SD module VCC goes on 5V: its AMS1117 regulator needs ~1 V of headroom (on 3V3 the card gets ~2.3 V). 5V is only live on USB or an external 5 V supply.</text>
   <text x="40" y="694" class="note">• The card runs on software SPI (D0–D3) because hardware SPI shares D5–D7 with the mic. CS on D3 is pulled high at boot, so the card stays deselected.</text>
-  <text x="40" y="716" class="note">• Card: FAT32 (or FAT16), 32 GB or smaller. exFAT cards (most 64 GB+) must be reformatted as FAT32.</text>
+  <text x="40" y="716" class="note">• Card: FAT32 or exFAT, any size. Cards as sold work without reformatting (up to 32 GB come FAT32, 64 GB and up exFAT).</text>
   <text x="40" y="738" class="note">• Onboard LED (D4) = status: 1 Hz blink setup mode · flash per chime · lit while writing the card or recording a chime · double blip every 3 s = no card.</text>
   <text x="40" y="760" class="note">• Mic SCK on D8 is a known mistake: D8 is the I2S OUTPUT clock and stays silent (Microphone panel says "no data"). Free pins: A0, D8 (LOW at boot).</text>
 </svg>

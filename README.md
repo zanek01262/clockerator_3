@@ -43,7 +43,7 @@ INMP441 digital microphone and a microSD card listens to the clock. It does the 
 | 1 | **Wemos / LOLIN D1 mini** (ESP8266, 4 MB flash) | Clones are fine (this build uses one with an ESP8266MOD module). USB serial is on the board, so no programmer is needed. Sometimes sold as a "NodeMCU". |
 | 1 | **INMP441 I2S MEMS microphone** breakout | The common round board with six pins: `SD VDD GND SCK WS L/R`. |
 | 1 | **microSD card module, SPI** | The common module with an **AMS1117-3.3** regulator and a **74LVC125A** buffer chip, and a header `GND VCC MISO MOSI SCK CS`. |
-| 1 | **microSD card, 32 GB or smaller** | Must be **FAT32** (or FAT16). exFAT cards (most 64 GB and larger) must be reformatted. A decent-brand card writes faster and stalls less. |
+| 1 | **microSD card, any size** | **FAT32** or **exFAT**, so cards work as sold: up to 32 GB they come FAT32, 64 GB and up exFAT. 8–32 GB is plenty (see [Files on the SD card](#files-on-the-sd-card)). A decent-brand card writes faster and stalls less. |
 | 1 | 5×7 cm perfboard | Or any protoboard. |
 | – | Hookup wire, female headers / sockets | Socketing the D1 mini and the modules lets them be swapped. |
 | 1 | USB cable + **5 V USB power supply, 1 A or more** | Any phone charger. The SD module needs the 5 V that only USB (or an external 5 V supply) provides. |
@@ -234,7 +234,7 @@ The prototype fits on a **5×7 cm** board.
    - mic `SCK` reaches **D7**, not D8;
    - SD `MISO` reaches **D0**;
    - mic `L/R` reaches GND.
-7. Insert a **FAT32** card and connect USB.
+7. Insert a **FAT32 or exFAT** card and connect USB.
 
 Wiring diagram source: [`Clockerator/wiring_diagram.svg`](Clockerator/wiring_diagram.svg).
 
@@ -358,7 +358,7 @@ meanwhile and written once the card is found.
 | Microphone panel: **"too quiet"** (< 25 dB) | data misaligned, or the wrong half-word | Try the *Channel* selector (low/high half), then recheck the wiring. |
 | Recordings sound sped up or slowed down | the mic isn't doubling samples as assumed | Note the **repeats %** and see [HANDOFF.md §6](Clockerator/HANDOFF.md#6-how-the-audio-works). |
 | SD panel: *"no card, or card not answering"* | power or wiring | SD `VCC` on **5V** (on USB power), `CS` D3, `SCK` D1, `MOSI` D2, `MISO` D0. Reseat the card, then press **Check now**. |
-| SD panel: *"not FAT32/FAT16 (exFAT?)"* | card format | Reformat as FAT32 (cards over 32 GB need a FAT32 tool, or use a smaller card). |
+| SD panel: *"card found but not readable"* | card format (e.g. NTFS) or a corrupt file system | Reformat as FAT32 or exFAT (the SD Association's *SD Card Formatter* is the safest tool). |
 | Writes fail now and then | supply sagging, or a slow/old card | Better USB supply or cable, 100 µF across 5V–GND, a different card. Check **Speed test**. |
 | Board won't boot or upload with the modules attached | something holding a boot pin | D3/D4 must be HIGH and D8 LOW at boot. Check nothing extra is on D3/D4/D8 and that `MISO` isn't on them. |
 | Chimes counted twice | a ringing strike re-triggering | Raise **Onset rise** or **Refractory** in *Detection tuning*. |

@@ -1084,7 +1084,7 @@ async function sdRefresh(){
     $('sdMsg').textContent=d.ready?(d.msg==='recording'?'Logging to the SD card':d.msg):d.msg;
     $('sdNext').textContent=d.ready?'':(d.retryIn?'· next check in '+inTime(d.retryIn):'· checking…');
     $('sdRetry').hidden=!!d.ready;
-    $('sdCard').textContent=d.ready?(d.cardMB>=1024?(d.cardMB/1024).toFixed(1)+' GB':d.cardMB+' MB')+' FAT'+d.fat:'—';
+    $('sdCard').textContent=d.ready?(d.cardMB>=1024?(d.cardMB/1024).toFixed(1)+' GB':d.cardMB+' MB')+(d.fat===64?' exFAT':' FAT'+d.fat):'—';
     $('sdLast').textContent=d.lastWrite?ago(Math.max(0,d.now-d.lastWrite)):'—';
     $('sdPend').textContent=plural(d.pending,'strike')+', '+plural(d.levelsPending,'level row');
     $('sdCh').textContent=d.chimesSaved+(d.chimesLost?' ('+d.chimesLost+' lost)':'');
@@ -1108,7 +1108,7 @@ $('sdRetry').onclick=async()=>{
   try{
     const d=await (await fetch('/api/sd/retry',{method:'POST'})).json();
     await sdRefresh();
-    r.textContent=d.ready?'Card found.':'No card found. Check it is pushed in fully and formatted FAT32.';
+    r.textContent=d.ready?'Card found.':'No card found. Check it is pushed in fully and formatted FAT32 or exFAT.';
   }catch(e){r.textContent='Could not reach the device.';}
   b.disabled=false;b.textContent='Check now';
 };

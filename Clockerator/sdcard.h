@@ -28,7 +28,7 @@ struct SdLogStatus {
   bool        ready;          // card mounted
   const char* msg;            // human-readable state / last error
   uint32_t    cardMB;
-  uint8_t     fatType;        // 12 / 16 / 32
+  uint8_t     fatType;        // 12 / 16 / 32, or 64 = exFAT (FAT_TYPE_EXFAT)
   uint32_t    chimesSaved;    // since boot
   uint32_t    eventsSaved;    // since boot
   uint32_t    levelRows;      // since boot
@@ -53,7 +53,7 @@ void     sdSetActivityCallback(void (*cb)(bool busy));
 // For the recorder: the mounted volume, and how to report a failed write
 // (the card is re-mounted SD_RETRY_MS later: it was in use, so the fast
 // retries start over).
-SdFat32& sdFs();
+SdFs& sdFs();
 void     sdFail(const char* msg);
 
 void     sdQueueChime(uint64_t epochMs, float peakPa, float pitchHz, uint8_t strike);

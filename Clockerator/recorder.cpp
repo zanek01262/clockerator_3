@@ -27,7 +27,7 @@
 #define LOST_MARGIN     1024      // after an overrun, resume this far behind the newest sample
 #define STALL_GIVEUP_MS 3000      // no new audio for this long: close the clip
 
-static File32      s_f;
+static FsFile      s_f;
 static bool        s_active = false, s_busy = false;
 static uint32_t    s_startIdx = 0, s_readIdx = 0, s_stopIdx = 0, s_capIdx = 0;
 static uint32_t    s_dataBytes = 0;
@@ -111,7 +111,7 @@ static bool openClip(uint32_t startIdx, uint32_t stopIdx, const char* suffix) {
   localtime_r(&sec, &t);
   char dir[40];
   snprintf(dir, sizeof(dir), SD_REC_DIR "/%04d-%02d-%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday);
-  SdFat32& fs = sdFs();
+  SdFs& fs = sdFs();
   if (!fs.exists(dir) && !fs.mkdir(dir, true)) {
     failClip("not recording: could not create the recordings folder");
     return false;

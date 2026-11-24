@@ -14,6 +14,9 @@
    receive() below, which also keep the microphone drained while the card
    is busy (an SD write can stall for tens of ms, longer than the I2S DMA
    queue holds).
+
+   Card formats: FAT16, FAT32 and exFAT (SdFs / FsFile). Cards over 32 GB
+   (SDXC) come formatted exFAT, so they work as they come.
    ===================================================================== */
 #include "sdcard.h"
 #include "config.h"
@@ -121,7 +124,7 @@ class BitBangSpi : public SdSpiBaseClass {
 };
 
 static BitBangSpi g_spi;
-static SdFat32    g_sd;
+static SdFs       g_sd;               // FAT16/FAT32 or exFAT, whichever the card has
 // SHARED_SPI: CS is released after every operation, so the card sits idle
 // between flushes and a removed card leaves no half-finished transfer.
 #define SD_CONFIG SdSpiConfig(PIN_SD_CS, SHARED_SPI, SD_SCK_MHZ(16), &g_spi)
@@ -185,7 +188,7 @@ static bool mount() {
     return mountFailed(g_msgBuf);
   }
   if (!g_sd.volumeBegin())
-    return mountFailed("card found but it is not FAT32/FAT16 (exFAT?): format it as FAT32");
+    return mountFailed("card found but not readable: format it as FAT32 or exFAT");
   if (!ensureDir(SD_CHIME_DIR) || !ensureDir(SD_EVENT_DIR) ||
       !ensureDir(SD_LEVEL_DIR) || !ensureDir(SD_REC_DIR))
     return mountFailed("card mounted but folders could not be created");
@@ -196,8 +199,12 @@ static bool mount() {
   g_msg     = "recording";
 
   char d[48];
-  snprintf(d, sizeof(d), "%lu MB FAT%u%s", (unsigned long)g_cardMB,
-           (unsigned)g_fatType, g_hadError ? " after a write error" : "");
+  if (g_fatType == FAT_TYPE_EXFAT)
+    snprintf(d, sizeof(d), "%lu MB exFAT%s", (unsigned long)g_cardMB,
+             g_hadError ? " after a write error" : "");
+  else
+    snprintf(d, sizeof(d), "%lu MB FAT%u%s", (unsigned long)g_cardMB,
+             (unsigned)g_fatType, g_hadError ? " after a write error" : "");
   Serial.printf("[SD] mounted: %s\n", d);
   sdQueueSystem("sd_mount", d);
   return true;
@@ -209,7 +216,7 @@ void sdBegin() {
 }
 
 bool sdReady() { return g_ready; }
-SdFat32& sdFs() { return g_sd; }
+SdFs& sdFs() { return g_sd; }
 void sdSetActivityCallback(void (*cb)(bool)) { g_activity = cb; }
 
 static uint32_t retryInterval() {
@@ -287,14 +294,14 @@ void sdQueueSystem(const char* event, const char* detail) {
 // =====================================================================
 //  Flush
 // =====================================================================
-static bool openAppend(File32& f, const char* path, const char* header) {
+static bool openAppend(FsFile& f, const char* path, const char* header) {
   if (!f.open(path, O_WRONLY | O_CREAT | O_APPEND)) return false;
   size_t hl = strlen(header);
   if (f.fileSize() == 0 && f.write(header, hl) != hl) { f.close(); return false; }
   return true;
 }
 
-static bool writeRow(File32& f, const char* row, int n) {
+static bool writeRow(FsFile& f, const char* row, int n) {
   if (n <= 0) return true;
   if (f.write(row, (size_t)n) == (size_t)n) return true;
   f.close();
@@ -303,7 +310,7 @@ static bool writeRow(File32& f, const char* row, int n) {
 
 static bool flushSystem() {
   if (!g_sqN) return true;
-  File32 f;
+  FsFile f;
   if (!openAppend(f, SD_SYSTEM_PATH, SYSTEM_HEADER)) return false;
   uint32_t now = (uint32_t)time(nullptr);
   for (uint8_t i = 0; i < g_sqN; i++) {
@@ -331,7 +338,7 @@ static void monthPath(char* path, size_t n, const char* dir, uint32_t sec, uint3
 
 static bool flushChimes() {
   if (!g_cqN) return true;
-  File32 f;
+  FsFile f;
   uint32_t openYm = 0;
   for (uint8_t i = 0; i < g_cqN; i++) {
     const QChime& c = g_cq[i];
@@ -367,7 +374,7 @@ static bool flushChimes() {
 
 static bool flushEvents() {
   ChimeEvent e;
-  File32 f;
+  FsFile f;
   uint32_t openYm = 0;
   while (eventsPeekUnsaved(e)) {
     if (e.sec < NTP_MIN_EPOCH) { eventsPopUnsaved(); continue; }   // no time: nothing to date it by
@@ -396,7 +403,7 @@ static bool flushEvents() {
 
 static bool flushLevels() {
   LevelRow r;
-  File32 f;
+  FsFile f;
   uint32_t openDay = 0;
   while (soundPeekLevel(r)) {
     time_t s = (time_t)r.epoch;
@@ -471,7 +478,7 @@ SdBench sdBenchmark() {
   if (!g_ready)    { b.msg = "no SD card"; return b; }
   if (recActive()) { b.msg = "a recording is in progress - try again in a minute"; return b; }
   uint8_t buf[512];
-  File32 f;
+  FsFile f;
   if (!f.open(BENCH_PATH, O_RDWR | O_CREAT | O_TRUNC)) { b.msg = "could not create the test file"; return b; }
   if (g_activity) g_activity(true);
   uint32_t t0 = millis();
@@ -526,7 +533,7 @@ struct DirEntry { uint32_t key; uint32_t size; };
 // its own, and a card edited on a PC can reorder anything.
 static int collect(const char* dirPath, bool wantDirs, int digits,
                    DirEntry* out, int maxN) {
-  File32 dir, e;
+  FsFile dir, e;
   if (!dir.open(dirPath, O_RDONLY)) return 0;
   int n = 0;
   while (n < maxN && e.openNext(&dir, O_RDONLY)) {
@@ -565,7 +572,7 @@ static bool pathAllowed(const String& p) {
 // Send `len` bytes of `f` from its current position. Keeps the mic drained
 // and a running clip writing while WiFi sends (a clip download takes
 // seconds).
-static void streamBytes(ESP8266WebServer& srv, File32& f, uint32_t len, bool skipHeader) {
+static void streamBytes(ESP8266WebServer& srv, FsFile& f, uint32_t len, bool skipHeader) {
   uint8_t buf[512];
   bool first = true;
   while (len > 0) {
@@ -588,7 +595,7 @@ static void streamBytes(ESP8266WebServer& srv, File32& f, uint32_t len, bool ski
 bool sdSendFile(ESP8266WebServer& srv, const String& path, bool download) {
   if (!g_ready)            { srv.send(503, "text/plain", "no SD card"); return false; }
   if (!pathAllowed(path))  { srv.send(400, "text/plain", "bad path");   return false; }
-  File32 f;
+  FsFile f;
   if (!f.open(path.c_str(), O_RDONLY) || f.isDir()) {
     srv.send(404, "text/plain", "not found");
     return false;
@@ -650,7 +657,7 @@ bool sdSendMonthly(ESP8266WebServer& srv, const char* dir, uint16_t months) {
     char path[48];
     snprintf(path, sizeof(path), "%s/%04lu-%02lu.csv", dir,
              (unsigned long)(list[i].key / 100), (unsigned long)(list[i].key % 100));
-    File32 f;
+    FsFile f;
     if (!f.open(path, O_RDONLY)) continue;
     streamBytes(srv, f, f.fileSize(), true);
     f.close();
@@ -685,7 +692,7 @@ void sdSendListing(ESP8266WebServer& srv, const String& month) {
   if (month.length() == 0) {
     std::unique_ptr<DirEntry[]> list(new (std::nothrow) DirEntry[MAX_MONTHS]);
     if (!list) { srv.sendContent("{\"ok\":0}"); srv.sendContent(""); return; }
-    File32 sys;
+    FsFile sys;
     uint32_t sysBytes = sys.open(SD_SYSTEM_PATH, O_RDONLY) ? sys.fileSize() : 0;
     sys.close();
     o.add("{\"ok\":1,\"system\":%lu", (unsigned long)sysBytes);
@@ -741,7 +748,7 @@ void sdSendRecListing(ESP8266WebServer& srv, const String& day) {
     }
     snprintf(path, sizeof(path), SD_REC_DIR "/%s", d);
   }
-  File32 dir, e;
+  FsFile dir, e;
   if (!dir.open(path, O_RDONLY)) { srv.send(200, "application/json", "{\"ok\":1,\"items\":[]}"); return; }
   srv.setContentLength(CONTENT_LENGTH_UNKNOWN);
   srv.send(200, "application/json", "");
@@ -776,7 +783,7 @@ void sdSendRecListing(ESP8266WebServer& srv, const String& day) {
 
 uint32_t sdChimeLogBytes() {
   if (!g_ready) return 0;
-  File32 dir, e;
+  FsFile dir, e;
   if (!dir.open(SD_CHIME_DIR, O_RDONLY)) return 0;
   uint32_t total = 0;
   while (e.openNext(&dir, O_RDONLY)) {
