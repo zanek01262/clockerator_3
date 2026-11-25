@@ -56,6 +56,11 @@ float      soundSampleRate();              // real I2S frame rate, Hz
 float      soundPaToDb(float pa);          // Pa -> dB SPL (0 for silence)
 void       soundNoteChimeEpoch(uint32_t epoch);
 void       soundClearCounts();             // "Delete all data": strike count, last strike, unsaved level rows
+// Deleting one chime event: take its strikes off the count, and (when it
+// held the newest strike) show the event before it as the last strike
+// (epoch 0 = none left).
+void       soundForgetStrikes(uint32_t n);
+void       soundSetLastChime(uint32_t epoch, float peakDb, float pitchHz);
 
 // ---- Audio stream ----
 // DC-blocked mic audio at soundAudioRate() (~10 kHz), newest AUDIO_RING

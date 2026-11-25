@@ -68,8 +68,10 @@
 //   3.1.0 exFAT cards (SDXC, 64 GB and up) work without reformatting
 //   3.2.0 "Delete all data"; learn the chime from a saved recording;
 //         threshold up to 120 dB (plot and meter cover the mic's full range)
+//   3.3.0 Delete one chime event from the events list (its log rows and
+//         its recording)
 #define PRODUCT_NAME "Clockerator"
-#define FW_VERSION   "3.2.0"
+#define FW_VERSION   "3.3.0"
 
 // ---------- SoftAP provisioning ----------
 #define AP_SSID  "Clockerator-Setup"
@@ -146,6 +148,7 @@ static const IPAddress AP_IP(192, 168, 4, 1);
 #define SD_RETRY_SLOW_MS     300000UL
 #define SD_CHIME_QUEUE       48        // strikes waiting for the next flush
 #define SD_SYSTEM_QUEUE      8
+#define SD_DEL_MAX           4         // single-event deletes waiting at once
 
 // ---------- Time ----------
 #define NTP_MIN_EPOCH   1700000000UL   // reject garbage NTP (before ~Nov 2023)

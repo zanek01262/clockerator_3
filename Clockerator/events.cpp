@@ -108,6 +108,34 @@ void eventsClear() {
   g_np    = 0;
 }
 
+// Ring slot of the k-th oldest event held (k < g_count).
+static uint8_t slot(uint8_t k) {
+  return (uint8_t)((g_head + EVENT_RECENT - g_count + k) % EVENT_RECENT);
+}
+
+bool eventsForget(uint32_t sec, uint16_t ms, ChimeEvent& out) {
+  uint8_t k = 0;
+  while (k < g_count && !(g_ring[slot(k)].sec == sec && g_ring[slot(k)].ms == ms)) k++;
+  if (k >= g_count) return false;
+  out = g_ring[slot(k)];
+  if (k >= g_count - g_unsaved) g_unsaved--;    // the newest g_unsaved are not on the card yet
+  for (; k + 1 < g_count; k++) g_ring[slot(k)] = g_ring[slot(k + 1)];
+  g_count--;
+  g_head = (uint8_t)((g_head + EVENT_RECENT - 1) % EVENT_RECENT);
+  eventsUncount();
+  return true;
+}
+
+void eventsUncount() { if (g_total) g_total--; }
+
+bool eventsUsesRec(const char* path) {
+  if (!path[0]) return false;
+  if (g_open && strcmp(g_cur.rec, path) == 0) return true;
+  for (uint8_t k = 0; k < g_count; k++)
+    if (strcmp(g_ring[slot(k)].rec, path) == 0) return true;
+  return false;
+}
+
 bool eventsPeekUnsaved(ChimeEvent& e) {
   if (!g_unsaved) return false;
   e = g_ring[(g_head + EVENT_RECENT - g_unsaved) % EVENT_RECENT];

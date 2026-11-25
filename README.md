@@ -343,8 +343,16 @@ and the dashboard can also export them as `.xlsx`.
 
 Recordings take roughly 10–40 MB a day, depending on how often the clock
 chimes, so a 32 GB card lasts years. The device only deletes files when you
-press **Device → Delete all data**, which removes every log and recording
-(after asking). To keep some, copy them off the card on a PC first.
+ask it to (it asks first, and neither can be undone):
+
+- **✕ on an event** in *Chime events* deletes that one event: its row in the
+  event log, its strikes in the chime log and its recording, and takes its
+  strikes off the count. Use it for a false detection, like a door slam. The
+  list shows events since the device started; **Load history** adds this
+  month's and last month's, so they can be deleted too. The recording is kept
+  if another event uses the same clip (this can happen with a test clip).
+- **Device → Delete all data** removes every log and recording. To keep
+  some, copy them off the card on a PC first.
 
 **Without a card** the Clockerator still runs: it detects and counts strikes,
 measures pitch, groups events, and the whole live dashboard works (WiFi and

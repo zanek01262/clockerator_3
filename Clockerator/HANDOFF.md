@@ -240,6 +240,29 @@ on the heap (~370 B, freed when done). It runs in 40 ms slices from
 during it (chimes queue in RAM). Refused while a clip is recording. The new
 `system.csv` starts with a `data_cleared` row giving the counts.
 
+**Delete one event (3.3.0)** (✕ in the events list; `handleEventDelete()`,
+`sdDeleteReady()` / `sdDeleteEvent()` / `delService()` in `sdcard.cpp`): the
+RAM side is immediate: the event leaves the ring and the unsaved queue
+(`eventsForget()`), its strikes come off `chimeCount` and `eventsTotal()`,
+its strikes still queued for the card are dropped, and if it held the newest
+strike the "last chime" readings fall back to the event before it. The card
+side runs in 40 ms slices like Delete all data (rows wait in RAM meanwhile;
+up to `SD_DEL_MAX` = 4 deletes queue): `/events/YYYY-MM.csv` minus rows whose
+`epoch_ms` equals the event's (an event only on the card is learned from that
+row), then `/chimes/YYYY-MM.csv` (and the next month's, if its last strike
+crossed the month end) minus rows from its first strike to its last + 500 ms
+(events are ≥ 3 s apart), then the WAV and its day folder if now empty. A row
+can't be cut in place, so each file is copied without the rows to `del.tmp`
+in the same folder, which then replaces it (remove + rename in one `loop()`
+pass). The copy reads and writes whole 512-byte sectors, which bypass SdFat's
+one-sector cache (row-by-row writes to one file while reading another would
+re-read a sector per row). The clip is kept if another event (RAM, or any row
+of that month's events file) names it, and waited for (30 s max) if it is
+still recording. Refused for the event in progress and events without a time
+(they can't be found on the card). Heap while running ~1.8 KB. Result in
+`/api/events` `delMsg`, and an `event_deleted` row in `system.csv`. An event
+longer than `recMaxSec` continues into clips no event names; those stay.
+
 **Plot range (3.2.0):** the 25 ms scope ring stores dB × 100 per bin (was
 Pa × 10000, which capped at 6.55 Pa = 110 dB); `/api/history` values are
 32-bit. Both now cover the mic's full ~123 dB, so a 120 dB threshold plots.
@@ -255,8 +278,9 @@ Pa × 10000, which capped at 6.55 Pa = 110 dB); `/api/history` values are
 | `/api/config` | GET/POST | threshold, refractoryMs, riseDb, toneEnabled, toneRatio, tz, micChannel, levelSec, recEnabled, recMaxSec, eventGapSec |
 | `/api/mic` | GET | status, advice, channel, loDb/hiDb, levelDb, ambientDb, clip, sps, rate, audioRate, gapMs, lostMs, repeatPct |
 | `/api/spectrum` | GET | sr, n, peakHz, peakDb, levelDb, db[512] (dB SPL per 9.8 Hz bin) |
-| `/api/events` | GET | total, open (in progress), list (since boot, newest first) |
+| `/api/events` | GET | total, open (in progress), list (since boot, newest first), del (single-event deletes still running on the card), delMsg (the last one's result) |
 | `/api/events/log?months=N` | GET | event CSV from SD |
+| `/api/events/delete?t=<sec>&ms=<ms>` | POST | delete one closed event (RAM at once, card in the background); returns `card` (0 = no card, RAM only) or msg |
 | `/api/rec` | GET | recorder status (active, path, seconds, clips, lostMs, errors, maxStallMs) |
 | `/api/rec/test?sec=N` | POST | manual clip (default 10 s) |
 | `/api/rec/list[?d=YYYY-MM-DD]` | GET | recording day folders / that day's clips (unsorted) |
@@ -291,6 +315,15 @@ AP mode: `/`, `/scan`, `/rescan`, `/save`.
   recordings browser, speed test, phone width (375 px, no horizontal scroll).
   3.2.0: Delete all data (confirm, progress, summary, events cleared),
   Learn chime from this (success and "no strike found"), 120 dB slider.
+  3.3.0: ✕ on an event (confirm text, row removed, "Deleting from the SD
+  card…" then the device's result, a refused delete puts the row back, an
+  event from Load history), phone width.
+- Single-event delete: a Python mirror of the sector-buffered row filter
+  (`delPump` / `delLine` / `rowGoes`) is byte-exact against a plain line
+  filter on a month of real-looking rows and 400 random files (CRLF, lines
+  longer than the 160-byte buffer, no final newline, duplicate rows); learns
+  strikes/length/clip from the row; notices a clip another event names,
+  before or after it.
 - Learning from a recording: a Python mirror of the WAV parse, strike finder
   and peak pick finds the first strike (also when a later one is louder),
   rejects noise-only clips, and reads a clip whose data size was never
@@ -302,7 +335,9 @@ AP mode: `/`, `/scan`, `/rescan`, `/save`.
 (3.1.0) compiles but hasn't been tried with an exFAT card. 3.2.0's Delete
 all data and learning from a recording haven't run on a real card yet
 (delete speed per file is unknown; expect seconds to a few minutes for a
-full card).
+full card). 3.3.0's single-event delete hasn't run on a card either: how
+long rewriting a large month of strikes takes is unknown (each file is read
+and written once, sector by sector).
 
 **Not verified — needs the real board:**
 - I2S framing with 32 clocks/frame (§6), channel auto-pick, the repeats figure.

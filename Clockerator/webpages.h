@@ -390,6 +390,9 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
     align-items:center; justify-content:center; cursor:pointer; text-decoration:none; font-size:13px; padding:0}
   .ev .eva button:hover,.ev .eva a:hover,.files button.pl:hover{border-color:var(--accent-dim); background:var(--accent-soft)}
   .ev .eva .na{color:var(--faint); font-size:11.5px; font-family:var(--mono)}
+  .ev .eva button.del{color:var(--faint)}
+  .ev .eva button.del:hover{color:var(--bad); border-color:var(--bad); background:rgba(193,84,60,.12)}
+  .ev.gone{opacity:.45}
   .files button.pl{width:26px; height:22px; font-size:11px}
   .evempty{padding:14px 12px; color:var(--faint); font-size:13px}
   .opts{display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center;
@@ -456,7 +459,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
       </div>
 
       <div class="panel" id="evPanel">
-        <h2 data-help="tt:Chime events|Each time the clock chimes, its strikes are grouped into one event (strikes closer together than the event gap) and recorded as a sound clip on the SD card, starting a quarter second before the first strike. Newest first; press &#9654; to listen, &#10515; to download the WAV. While a recording plays, &ldquo;Learn chime from this&rdquo; takes the chime&rsquo;s pitch from it.">Chime events</h2>
+        <h2 data-help="tt:Chime events|Each time the clock chimes, its strikes are grouped into one event (strikes closer together than the event gap) and recorded as a sound clip on the SD card, starting a quarter second before the first strike. Newest first; press &#9654; to listen, &#10515; to download the WAV, &#10005; to delete the event (its rows in the logs and its recording), e.g. a door slam that was taken for a strike. While a recording plays, &ldquo;Learn chime from this&rdquo; takes the chime&rsquo;s pitch from it.">Chime events</h2>
         <div class="recline"><span class="recdot" id="recDot"></span><span id="recMsg">checking&hellip;</span></div>
         <audio id="player" controls preload="none" hidden></audio>
         <div class="nowplay" id="nowPlay" hidden><span id="nowPlayT"></span>
@@ -922,8 +925,9 @@ async function poll(){
     $('chimes').textContent=s.chimes;
     // Track true chime peaks so detection can be judged on real loudness.
     if(s.chimes!==lastChimeCount){
+      const more=s.chimes>lastChimeCount;   // fewer: an event was deleted
       lastChimeCount=s.chimes;
-      if(s.lastPeak>0){
+      if(more&&s.lastPeak>0){
         recentPeaks.push(s.lastPeak); if(recentPeaks.length>6)recentPeaks.shift();
         $('gPeak').textContent=fmtDb(s.lastPeak);
         $('gPeaks').textContent=recentPeaks.map(v=>dB(v).toFixed(0)).join('  ');
@@ -1335,6 +1339,7 @@ $('logLoad').onclick=loadLog;
 const player=$('player');
 let playingRec='', curRec='', pendingTest='', evOpen=null;   // curRec: last clip played
 const evMap=new Map();             // epoch ms -> event (since boot + loaded history)
+const evGone=new Set();            // epoch ms of events deleted from this page
 const recUrl=p=>getUrl(p);
 const pad2=n=>String(n).padStart(2,'0');
 function play(p){
@@ -1376,6 +1381,8 @@ function evRow(e,now){
   else if(e.rec) act='<button data-rec="'+e.rec+'" title="Play" aria-label="Play recording">▶</button>'+
     '<a href="'+recUrl(e.rec)+'&dl=1" title="Download WAV" aria-label="Download recording">⤓</a>';
   else act='<span class="na">no clip</span>';
+  // Events from before NTP time have no timestamp to find them by on the card.
+  if(!now&&e.t) act+='<button class="del" data-del="'+(e.t*1000+(e.ms||0))+'" title="Delete event" aria-label="Delete this event">✕</button>';
   return '<div class="ev'+(now?' now':'')+(e.rec&&e.rec===playingRec?' playing':'')+'">'+
     '<div class="evt">'+tm+'<small>'+(now?'in progress':day)+'</small></div>'+
     '<div class="evn">'+e.n+'<small>'+(e.n===1?'strike':'strikes')+'</small></div>'+
@@ -1390,6 +1397,31 @@ function renderEvents(){
   if(h===evHtml)return;
   evHtml=h;box.innerHTML=h;
   box.querySelectorAll('button[data-rec]').forEach(b=>b.onclick=()=>play(b.dataset.rec));
+  box.querySelectorAll('button[data-del]').forEach(b=>b.onclick=()=>delEvent(+b.dataset.del,b));
+}
+// ---- Delete one event ----
+let delWait=false;                 // deletes still running on the SD card
+async function delEvent(key,btn){
+  const e=evMap.get(key),info=$('evInfo');
+  if(!e)return;
+  const when=new Date(key).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if(!confirm('Delete this chime event?\n\n'+when+' · '+e.n+(e.n===1?' strike':' strikes')+'\n\n'+
+    'Its strikes in the chime log, its row in the event log'+(e.rec?' and its recording':'')+
+    ' are deleted from the SD card, and the strike count goes down. This cannot be undone.'))return;
+  btn.disabled=true;btn.closest('.ev').classList.add('gone');
+  info.textContent='Deleting…';
+  try{
+    const j=await (await fetch('/api/events/delete?t='+e.t+'&ms='+(e.ms||0),{method:'POST'})).json();
+    if(!j.ok){info.textContent='Not deleted: '+j.msg+'.';evHtml='';renderEvents();return;}
+    evMap.delete(key);evGone.add(key);   // a poll already on its way mustn't bring it back
+    if(e.rec&&e.rec===curRec){
+      player.pause();player.removeAttribute('src');player.hidden=true;
+      $('nowPlay').hidden=true;playingRec='';curRec='';
+    }
+    renderEvents();
+    if(j.card){delWait=true;info.textContent='Deleting from the SD card…';clearTimeout(evTimer);evTimer=setTimeout(pollEvents,700);}
+    else info.textContent='Removed from the list. There is no SD card, so nothing on a card was changed.';
+  }catch(x){info.textContent='Could not reach the device.';evHtml='';renderEvents();}
 }
 let evBusy=false, evTimer=0;
 async function pollEvents(){
@@ -1399,8 +1431,9 @@ async function pollEvents(){
   try{
     const d=await (await fetch('/api/events')).json();
     evOpen=d.open;
-    for(const e of d.list) evMap.set(e.t*1000+e.ms,e);
+    for(const e of d.list) if(!evGone.has(e.t*1000+e.ms)) evMap.set(e.t*1000+e.ms,e);
     renderEvents();
+    if(delWait&&!d.del){delWait=false;$('evInfo').textContent=d.delMsg||'Deleted.';}
     const r=await (await fetch('/api/rec')).json();
     active=!!r.active;
     $('recDot').className='recdot'+(active?' on':'');
@@ -1411,7 +1444,7 @@ async function pollEvents(){
     if(pendingTest&&!active){play(pendingTest);testDone();}
   }catch(e){}
   evBusy=false;
-  evTimer=setTimeout(pollEvents,active||evOpen?1500:5000);
+  evTimer=setTimeout(pollEvents,active||evOpen||delWait?1500:5000);
 }
 pollEvents();
 const recTestBtn=$('recTest');
@@ -1436,7 +1469,7 @@ $('evHist').onclick=()=>{
     let n=0;
     for(const l of L.slice(1)){
       const c=l.split(','), ems=+c[ix('epoch_ms')];
-      if(!ems)continue;
+      if(!ems||evGone.has(ems))continue;
       evMap.set(ems,{t:Math.floor(ems/1000),ms:ems%1000,n:+c[ix('strikes')],dur:+c[ix('duration_s')],
         db:+c[ix('max_db')],hz:+c[ix('pitch_hz')]||0,rec:(c[ix('recording')]||'').trim()});
       n++;

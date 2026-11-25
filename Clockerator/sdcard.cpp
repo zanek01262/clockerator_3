@@ -141,6 +141,7 @@ static bool        g_ready = false;
 static bool        g_hadError = false;
 static uint8_t     g_mountFails = 0;      // in a row; picks the retry interval
 static struct Wipe* g_wipe = nullptr;     // "Delete all data" in progress
+static struct EvDel* g_del = nullptr;     // single-event deletes in progress
 static uint32_t    g_wipeFiles = 0, g_wipeFailed = 0;   // of the current / last delete
 static uint32_t    g_lastTry = 0, g_lastFlushMs = 0, g_lastFlushEpoch = 0;
 static uint32_t    g_cardMB = 0;
@@ -461,9 +462,12 @@ static void flush() {
 }
 
 static bool wipeService();   // "Delete all data", below
+static bool delService();    // deleting one event, below
+static void delAbort(const char* why);
 
 void sdService() {
   if (wipeService()) return;          // deleting: no flushes until it is done
+  if (delService()) return;           // rewriting a log file: rows wait in RAM
   uint32_t now = millis();
   if (!g_ready && (uint32_t)(now - g_lastTry) >= retryInterval()) mount();
   if (!g_ready || !sdTimeOk()) return;
@@ -553,6 +557,7 @@ bool sdWipeStart(const char** why) {
     g_wipe = new (std::nothrow) Wipe();
     if (!g_wipe)   { *why = "not enough memory - try again"; return false; }
   }
+  if (g_del) delAbort("replaced by Delete all data");
   // Rows still waiting for the card are old data too.
   g_cqN = 0;
   g_sqN = 0;
@@ -632,6 +637,352 @@ static bool wipeService() {
     w.path[L] = '\0';
   }
   if (g_activity) g_activity(false);
+  return true;
+}
+
+// =====================================================================
+//  Delete one chime event
+// =====================================================================
+// Its row in /events/YYYY-MM.csv, its strikes in /chimes/YYYY-MM.csv (rows
+// from its first strike to its last, + DEL_SLACK_MS) and its recording. A
+// row can't be cut out of a file in place, so each file is copied without
+// those rows to DEL_TMP_NAME in the same folder, which then replaces it.
+// A month of strikes can be a few MB, so like "Delete all data" the copy
+// runs a slice per loop() pass. It reads and writes whole sectors: those go
+// straight to the card instead of through SdFat's one-sector cache, which
+// two files used in turn would make re-read for every row.
+#define DEL_SLICE_MS     40
+#define DEL_SLACK_MS     500     // strike times vs the 0.1 s event length; events are >= 3 s apart
+#define DEL_REC_WAIT_MS  30000   // its clip still recording: wait this long, then leave it
+#define DEL_TMP_NAME     "del.tmp"   // no date in the name, so file listings skip it
+
+struct DelReq {
+  uint64_t at;            // first strike, epoch ms (the event's epoch_ms column)
+  uint32_t spanMs;        // first to last strike
+  uint8_t  strikes;
+  bool     known;         // spanMs / strikes / rec known (from RAM or the events file)
+  bool     inRam;         // was in the RAM list: the counts were adjusted there
+  char     rec[48];
+};
+
+enum : uint8_t { DS_EVENTS, DS_SHARE, DS_CHIMES, DS_CHIMES2, DS_REC, DS_DONE };
+
+struct EvDel {
+  DelReq   q[SD_DEL_MAX];
+  uint8_t  n = 0;                // requests waiting; q[0] is being worked on
+  uint8_t  step = DS_EVENTS;
+  bool     fileOpen = false;     // src (and dst when copying) open for this step
+  bool     copy = false;         // false: DS_SHARE only reads
+  bool     midLine = false;      // inside a line longer than `line`
+  bool     dropping = false;     // the current line is being dropped
+  bool     shared = false;       // another event uses the same recording
+  bool     recFromFile = false;  // rec read from the events file: check sharing after
+  uint8_t  recDone = 0;          // 1 deleted, 2 kept (shared), 3 kept (still recording)
+  uint32_t rows = 0;             // rows removed for q[0], all files
+  uint32_t removed = 0;          // rows removed from the current file
+  uint32_t waitT0 = 0;
+  FsFile   src, dst;
+  char     path[40], tmp[40];
+  uint16_t inLen = 0, inPos = 0, outLen = 0;
+  uint8_t  lineLen = 0;
+  char     line[160];
+  uint8_t  in[512], out[512];
+};
+static char g_delMsg[100] = "";
+
+uint8_t sdDeletesPending() { return g_del ? g_del->n : 0; }
+const char* sdDeleteResult() { return g_delMsg; }
+
+bool sdDeleteReady(const char** why) {
+  if (g_wipe) { *why = "deleting all data - try again when it has finished"; return false; }
+  if (!g_ready) return true;                  // memory only: nothing to queue
+  if (!g_del) {
+    g_del = new (std::nothrow) EvDel();
+    if (!g_del) { *why = "not enough memory - try again"; return false; }
+  }
+  if (g_del->n >= SD_DEL_MAX) { *why = "still deleting the others - try again in a moment"; return false; }
+  return true;
+}
+
+bool sdDeleteEvent(uint64_t atMs, const ChimeEvent* known) {
+  if (known) {                                // its strikes not on the card yet
+    uint64_t end = atMs + (uint64_t)known->durDs * 100ULL + DEL_SLACK_MS;
+    uint8_t k = 0;
+    for (uint8_t i = 0; i < g_cqN; i++) {
+      uint64_t t = (uint64_t)g_cq[i].sec * 1000ULL + g_cq[i].ms;
+      if (t < atMs || t > end) g_cq[k++] = g_cq[i];
+    }
+    g_cqN = k;
+  }
+  if (!g_ready || !g_del || g_del->n >= SD_DEL_MAX) return false;
+  for (uint8_t i = 0; i < g_del->n; i++)
+    if (g_del->q[i].at == atMs) return true;  // asked twice
+  DelReq& r = g_del->q[g_del->n++];
+  memset(&r, 0, sizeof(r));
+  r.at = atMs;
+  if (known) {
+    r.known   = r.inRam = true;
+    r.spanMs  = (uint32_t)known->durDs * 100UL;
+    r.strikes = known->strikes;
+    strlcpy(r.rec, known->rec, sizeof(r.rec));
+  }
+  return true;
+}
+
+// ---- CSV rows ----
+static const char* csvCol(const char* s, uint8_t k) {     // start of column k, or nullptr
+  while (s && k--) { s = strchr(s, ','); if (s) s++; }
+  return s;
+}
+static uint64_t csvU64(const char* s) {                   // 0 if not a number
+  uint64_t v = 0;
+  if (!s || *s < '0' || *s > '9') return 0;
+  while (*s >= '0' && *s <= '9') v = v * 10 + (uint64_t)(*s++ - '0');
+  return v;
+}
+// The events row's recording column (the last) is `rec`.
+static bool rowRecIs(const char* line, const char* rec) {
+  const char* c = csvCol(line, 7);
+  size_t L = strlen(rec);
+  return c && L && strncmp(c, rec, L) == 0 && (c[L] == '\0' || c[L] == '\n' || c[L] == '\r');
+}
+
+// Does this row (a line start) go? In the events file it also learns the
+// event from its row, and notices another event using the same recording.
+static bool rowGoes(EvDel& d, const char* line) {
+  DelReq& r = d.q[0];
+  uint64_t t = csvU64(csvCol(line, 2));
+  if (d.step == DS_CHIMES || d.step == DS_CHIMES2)
+    return t >= r.at && t <= r.at + r.spanMs + DEL_SLACK_MS;
+  bool ours = t == r.at;
+  if (d.step == DS_EVENTS && ours && !r.known) {
+    const char* c3 = csvCol(line, 3);
+    const char* c4 = csvCol(line, 4);
+    const char* c7 = csvCol(line, 7);
+    r.known   = true;
+    r.strikes = c3 ? (uint8_t)atoi(c3) : 0;
+    r.spanMs  = c4 ? (uint32_t)(strtod(c4, nullptr) * 1000.0 + 0.5) : 0;
+    size_t k = 0;
+    while (c7 && c7[k] && c7[k] != '\n' && c7[k] != '\r' && c7[k] != ',' && k + 1 < sizeof(r.rec)) {
+      r.rec[k] = c7[k];
+      k++;
+    }
+    r.rec[k] = '\0';
+    if (strncmp(r.rec, SD_REC_DIR "/", sizeof(SD_REC_DIR)) != 0) r.rec[0] = '\0';
+    d.recFromFile = r.rec[0] != '\0';         // rows before this one weren't checked
+  }
+  if (!ours && r.rec[0] && rowRecIs(line, r.rec)) d.shared = true;
+  return ours && d.step == DS_EVENTS;
+}
+
+static bool delEmit(EvDel& d, const char* p, size_t n) {
+  while (n) {
+    size_t k = sizeof(d.out) - d.outLen;
+    if (k > n) k = n;
+    memcpy(d.out + d.outLen, p, k);
+    d.outLen += (uint16_t)k; p += k; n -= k;
+    if (d.outLen == sizeof(d.out)) {
+      if (d.dst.write(d.out, sizeof(d.out)) != sizeof(d.out)) return false;
+      d.outLen = 0;
+    }
+  }
+  return true;
+}
+
+// d.line holds a whole line, or the first part of one too long for it.
+static bool delLine(EvDel& d) {
+  d.line[d.lineLen] = '\0';
+  if (!d.midLine) {                           // a row starts here
+    d.dropping = rowGoes(d, d.line);
+    if (d.dropping) d.removed++;
+  }
+  d.midLine = d.line[d.lineLen - 1] != '\n';
+  bool ok = d.dropping || !d.copy || delEmit(d, d.line, d.lineLen);
+  d.lineLen = 0;
+  return ok;
+}
+
+// Open this step's month file. 1 = open, 0 = no such file, -1 = card error.
+static int delOpen(EvDel& d, const char* dir, uint32_t sec, bool copy) {
+  uint32_t ym;
+  monthPath(d.path, sizeof(d.path), dir, sec, &ym);
+  snprintf(d.tmp, sizeof(d.tmp), "%s/" DEL_TMP_NAME, dir);
+  if (!d.src.open(d.path, O_RDONLY)) return 0;
+  if (copy && !d.dst.open(d.tmp, O_WRONLY | O_CREAT | O_TRUNC)) { d.src.close(); return -1; }
+  d.fileOpen = true;
+  d.copy     = copy;
+  d.midLine  = d.dropping = false;
+  d.inLen = d.inPos = d.outLen = 0;
+  d.lineLen  = 0;
+  d.removed  = 0;
+  return 1;
+}
+
+// End of the source file: the copy replaces it if any rows went.
+static bool delCloseFile(EvDel& d) {
+  bool ok = d.lineLen == 0 || delLine(d);     // a last line without '\n'
+  d.fileOpen = false;
+  d.src.close();
+  if (!d.copy) return ok;
+  if (ok && d.outLen) ok = d.dst.write(d.out, d.outLen) == d.outLen;
+  ok = d.dst.close() && ok;
+  if (!ok || !d.removed) {                    // failed, or nothing of it in here
+    g_sd.remove(d.tmp);
+    return ok;
+  }
+  // Both in the same loop() pass: nothing reads the file in between.
+  if (!g_sd.remove(d.path) || !g_sd.rename(d.tmp, d.path)) return false;
+  d.rows += d.removed;
+  return true;
+}
+
+// Feed the open file through delLine until the slice is up.
+// 1 = file done, 0 = more next pass, -1 = card error.
+static int delPump(EvDel& d, uint32_t t0) {
+  while ((uint32_t)(millis() - t0) < DEL_SLICE_MS) {
+    if (d.inPos >= d.inLen) {
+      int r = d.src.read(d.in, sizeof(d.in));
+      if (r < 0) return -1;
+      if (r == 0) return delCloseFile(d) ? 1 : -1;
+      d.inLen = (uint16_t)r;
+      d.inPos = 0;
+    }
+    while (d.inPos < d.inLen) {
+      char c = (char)d.in[d.inPos++];
+      d.line[d.lineLen++] = c;
+      if ((c == '\n' || d.lineLen >= sizeof(d.line) - 1) && !delLine(d)) return -1;
+    }
+  }
+  return 0;
+}
+
+// Open the current step's file. 1 = open, 0 = the step has nothing to do,
+// -1 = card error.
+static int delStepOpen(EvDel& d) {
+  DelReq& r = d.q[0];
+  uint32_t sec = (uint32_t)(r.at / 1000ULL);
+  switch (d.step) {
+    case DS_EVENTS: return delOpen(d, SD_EVENT_DIR, sec, true);
+    case DS_SHARE:  return (r.rec[0] && d.recFromFile && !d.shared) ? delOpen(d, SD_EVENT_DIR, sec, false) : 0;
+    case DS_CHIMES: return r.known ? delOpen(d, SD_CHIME_DIR, sec, true) : 0;
+    case DS_CHIMES2: {                         // its last strike fell in the next month
+      uint32_t endSec = (uint32_t)((r.at + r.spanMs + DEL_SLACK_MS) / 1000ULL), a, b;
+      char p[40];
+      monthPath(p, sizeof(p), SD_CHIME_DIR, sec, &a);
+      monthPath(p, sizeof(p), SD_CHIME_DIR, endSec, &b);
+      return (r.known && a != b) ? delOpen(d, SD_CHIME_DIR, endSec, true) : 0;
+    }
+  }
+  return 0;
+}
+
+static void delStepDone(EvDel& d) {
+  DelReq& r = d.q[0];
+  if (d.step == DS_EVENTS) {
+    if (!r.known) { d.step = DS_DONE; return; }      // not on the card (any more)
+    // Found only on the card: if it happened since boot, its strikes are in
+    // the dashboard's counts too.
+    uint32_t boot = (uint32_t)time(nullptr) - (uint32_t)(micros64() / 1000000ULL);
+    if (!r.inRam && sdTimeOk() && r.at / 1000ULL >= boot) {
+      soundForgetStrikes(r.strikes);
+      eventsUncount();
+    }
+  }
+  d.step++;
+}
+
+// The recording. False while waiting for it to finish recording.
+static bool delRec(EvDel& d) {
+  DelReq& r = d.q[0];
+  if (!r.rec[0] || strncmp(r.rec, SD_REC_DIR "/", sizeof(SD_REC_DIR)) != 0) return true;
+  if (d.shared || eventsUsesRec(r.rec)) { d.recDone = 2; return true; }
+  if (recActive() && strcmp(recCurrentPath(), r.rec) == 0) {
+    if (!d.waitT0) d.waitT0 = millis() | 1;
+    if ((uint32_t)(millis() - d.waitT0) < DEL_REC_WAIT_MS) return false;
+    d.recDone = 3;
+    return true;
+  }
+  if (g_sd.remove(r.rec)) {
+    d.recDone = 1;
+    char dir[48];
+    strlcpy(dir, r.rec, sizeof(dir));
+    char* s = strrchr(dir, '/');
+    if (s && s > dir + sizeof(SD_REC_DIR) - 1) { *s = '\0'; g_sd.rmdir(dir); }   // its day folder, if now empty
+  }
+  return true;
+}
+
+// q[0] is finished: report it and start the next one.
+static void delNext(EvDel& d) {
+  DelReq& r = d.q[0];
+  char day[12], tm_[14];                      // tm_ = HH:MM:SS.mmm; %.8s drops the ms
+  formatLocalParts(r.at, day, sizeof(day), tm_, sizeof(tm_));
+  const char* rec = d.recDone == 1 ? " and its recording" :
+                    d.recDone == 2 ? " (recording kept: another event uses it)" :
+                    d.recDone == 3 ? " (recording kept: still recording)" : "";
+  if (!r.known)
+    snprintf_P(g_delMsg, sizeof(g_delMsg), PSTR("The %.8s event was not on the SD card."), tm_);
+  else if (d.rows)
+    snprintf_P(g_delMsg, sizeof(g_delMsg), PSTR("Deleted the %.8s event: %lu log row%s%s."), tm_,
+               (unsigned long)d.rows, d.rows == 1 ? "" : "s", rec);
+  else
+    snprintf_P(g_delMsg, sizeof(g_delMsg), PSTR("Deleted the %.8s event%s."), tm_, rec);
+  char det[40];
+  snprintf_P(det, sizeof(det), PSTR("%.10s %.8s %lu rows%s"), day, tm_, (unsigned long)d.rows,
+             d.recDone == 1 ? " +clip" : "");
+  sdQueueSystem("event_deleted", det);
+  Serial.printf("[SD] %s\n", g_delMsg);
+  memmove(d.q, d.q + 1, sizeof(DelReq) * (d.n - 1));
+  d.n--;
+  d.step    = DS_EVENTS;
+  d.shared  = d.recFromFile = false;
+  d.recDone = 0;
+  d.rows    = d.waitT0 = 0;
+}
+
+static void delAbort(const char* why) {
+  if (!g_del) return;
+  if (g_del->fileOpen) {
+    g_del->src.close();
+    if (g_del->copy) { g_del->dst.close(); if (g_ready) g_sd.remove(g_del->tmp); }
+  }
+  snprintf(g_delMsg, sizeof(g_delMsg), "Delete stopped: %s.", why);
+  Serial.printf("[SD] %s\n", g_delMsg);
+  delete g_del;
+  g_del = nullptr;
+}
+
+// One slice of the deletes. True while one is in progress.
+static bool delService() {
+  if (!g_del) return false;
+  if (!g_ready) { delAbort("SD card removed"); return false; }
+  EvDel& d = *g_del;
+  if (!d.n) { delete g_del; g_del = nullptr; return false; }   // reserved, never used
+  if (g_activity) g_activity(true);
+  uint32_t t0 = millis();
+  bool err = false;
+  while (d.n && (uint32_t)(millis() - t0) < DEL_SLICE_MS) {
+    if (d.step == DS_REC) {
+      if (!delRec(d)) break;                  // its clip is still recording
+      d.step = DS_DONE;
+    }
+    if (d.step >= DS_DONE) { delNext(d); continue; }
+    if (!d.fileOpen) {
+      int o = delStepOpen(d);
+      if (o < 0) { err = true; break; }
+      if (o == 0) { delStepDone(d); continue; }
+    }
+    int p = delPump(d, t0);
+    if (p < 0) { err = true; break; }
+    if (p == 1) delStepDone(d);
+  }
+  if (g_activity) g_activity(false);
+  if (err) {
+    delAbort("SD card error");
+    sdFail("write failed while deleting an event (card removed?)");
+    return false;
+  }
+  if (!d.n) { delete g_del; g_del = nullptr; }
   return true;
 }
 

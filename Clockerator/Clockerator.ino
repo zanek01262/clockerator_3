@@ -448,9 +448,12 @@ static void handleEvents() {
   // ones are in /api/events/log (the SD card's monthly event files).
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "application/json", "");
-  char b[200];
+  char b[320];
   ChimeEvent e;
-  int n = snprintf(b, sizeof(b), "{\"total\":%lu,\"open\":", (unsigned long)eventsTotal());
+  // del: single-event deletes still running on the card; delMsg: the last
+  // one's result (both from the Delete button).
+  int n = snprintf_P(b, sizeof(b), PSTR("{\"total\":%lu,\"del\":%u,\"delMsg\":\"%s\",\"open\":"),
+                     (unsigned long)eventsTotal(), (unsigned)sdDeletesPending(), sdDeleteResult());
   if (eventsOpen(e)) n += eventJson(b + n, sizeof(b) - n, e);
   else               n += snprintf(b + n, sizeof(b) - n, "null");
   n += snprintf(b + n, sizeof(b) - n, ",\"list\":[");
@@ -600,6 +603,45 @@ static void handleDataClear() {
   server.send(200, "application/json", card ? "{\"ok\":1,\"card\":1}" : "{\"ok\":1,\"card\":0}");
 }
 
+// Delete button in the events list: one closed event (t = epoch seconds,
+// ms = its milliseconds). It leaves the RAM list and the dashboard counts
+// at once; its rows and recording on the card go in the background
+// (/api/events: del, delMsg).
+static void handleEventDelete() {
+  uint32_t t  = strtoul(server.arg("t").c_str(), nullptr, 10);
+  long     ms = server.hasArg("ms") ? server.arg("ms").toInt() : -1;
+  const char* why = nullptr;
+  ChimeEvent e;
+  if (t < NTP_MIN_EPOCH || ms < 0 || ms > 999)
+    why = "this event has no time, so it can't be found";
+  else if (eventsOpen(e) && e.sec == t && e.ms == (uint16_t)ms)
+    why = "the clock is still striking - try again when the event has finished";
+  if (why || !sdDeleteReady(&why)) {
+    char b[140];
+    snprintf(b, sizeof(b), "{\"ok\":0,\"msg\":\"%s\"}", why);
+    server.send(200, "application/json", b);
+    return;
+  }
+  bool inRam = eventsForget(t, (uint16_t)ms, e);
+  if (inRam) {
+    soundForgetStrikes(e.strikes);
+    // It held the newest strike: show the event before it as the last one.
+    uint32_t last = soundGetState().lastChimeEpoch;
+    if (last >= e.sec && last <= e.sec + e.durDs / 10 + 2) {
+      ChimeEvent p;
+      if (eventsRecentAt(0, p)) soundSetLastChime(p.sec + p.durDs / 10, p.maxDb10 / 10.0f, p.pitch10 / 10.0f);
+      else                      soundSetLastChime(0, 0, 0);
+    }
+  }
+  bool card = sdDeleteEvent((uint64_t)t * 1000ULL + (uint64_t)ms, inRam ? &e : nullptr);
+  if (!inRam && !card) {
+    server.send_P(200, PSTR("application/json"),
+                  PSTR("{\"ok\":0,\"msg\":\"there is no SD card, and the event is no longer in memory\"}"));
+    return;
+  }
+  server.send(200, "application/json", card ? "{\"ok\":1,\"card\":1}" : "{\"ok\":1,\"card\":0}");
+}
+
 // "Check now" on the SD panel: mount a card that was just inserted instead
 // of waiting for the next scheduled retry. The page then re-reads /api/sd.
 static void handleSdRetry() {
@@ -734,6 +776,7 @@ static bool startSTAMode() {
   server.on("/api/spectrum",     handleSpectrum);
   server.on("/api/events",       handleEvents);
   server.on("/api/events/log",   handleEventLog);
+  server.on("/api/events/delete", HTTP_POST, handleEventDelete);
   server.on("/api/rec",          handleRec);
   server.on("/api/rec/test",     HTTP_POST, handleRecTest);
   server.on("/api/rec/list",     handleRecList);

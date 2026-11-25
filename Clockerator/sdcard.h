@@ -23,6 +23,7 @@
 #include <Arduino.h>
 #include <ESP8266WebServer.h>
 #include <SdFat.h>
+#include "events.h"
 
 struct SdLogStatus {
   bool        ready;          // card mounted
@@ -70,6 +71,20 @@ void     sdQueueSystem(const char* event, const char* detail);
 // card only those are cleared. False (with *why) while a clip is recording.
 bool     sdWipeStart(const char** why);
 bool     sdWiping();          // a delete is in progress: no new recordings
+
+// Delete one chime event (the Delete button in the events list): its row
+// in /events, its strikes in /chimes and its recording (unless another
+// event uses the same clip). The files are rewritten in the background, a
+// slice per sdService() pass; up to SD_DEL_MAX deletes wait their turn.
+//   sdDeleteReady: call first; false (with *why) if one can't be queued now.
+//   sdDeleteEvent: `known` = the event from the RAM list (nullptr if it was
+//     only on the card: the job reads its details from the events file).
+//     Its strikes still queued for the card are dropped at once. False if
+//     there is no card (nothing queued).
+bool     sdDeleteReady(const char** why);
+bool     sdDeleteEvent(uint64_t atMs, const ChimeEvent* known);
+uint8_t  sdDeletesPending();  // queued or in progress
+const char* sdDeleteResult(); // what the last finished delete did ("" = none yet)
 
 // Write speed test: 256 KB written and read back in /bench.tmp (removed
 // again). False if the card is missing or busy recording.

@@ -32,6 +32,12 @@ uint8_t eventsRecentCount();                // closed events held in RAM
 bool    eventsRecentAt(uint8_t i, ChimeEvent& e);   // i = 0: newest
 uint32_t eventsTotal();                     // closed since boot (or since "Delete all data")
 void    eventsClear();                      // "Delete all data": drop every event
+// Delete one closed event (the Delete button in the events list): it leaves
+// the RAM list and, if not yet written, the SD queue, and the since-boot
+// total drops by one. True if it was in RAM; `out` gets a copy.
+bool    eventsForget(uint32_t sec, uint16_t ms, ChimeEvent& out);
+void    eventsUncount();                    // an older event since boot, deleted from the card
+bool    eventsUsesRec(const char* path);    // a RAM event (or the open one) has this recording
 
 // SD queue (single consumer: the flush in sdcard.cpp).
 bool    eventsPeekUnsaved(ChimeEvent& e);

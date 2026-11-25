@@ -550,6 +550,16 @@ void soundClearCounts() {
   g_lvlDropped = 0;
 }
 
+void soundForgetStrikes(uint32_t n) {
+  g_state.chimeCount = g_state.chimeCount > n ? g_state.chimeCount - n : 0;
+}
+
+void soundSetLastChime(uint32_t epoch, float peakDb, float pitchHz) {
+  g_state.lastChimeEpoch = epoch;
+  g_state.lastChimePeak  = (epoch && peakDb > 0) ? 2e-5f * powf(10.0f, peakDb / 20.0f) : 0;
+  g_state.lastChimePitch = epoch ? pitchHz : 0;
+}
+
 uint16_t soundHistoryCount() {
   return (g_histSeq < HIST_SECONDS) ? (uint16_t)g_histSeq : (uint16_t)HIST_SECONDS;
 }
