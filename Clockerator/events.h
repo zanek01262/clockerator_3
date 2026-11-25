@@ -30,7 +30,8 @@ void    eventsService();                    // loop(): close an event once it is
 bool    eventsOpen(ChimeEvent& e);          // the event still in progress, if any
 uint8_t eventsRecentCount();                // closed events held in RAM
 bool    eventsRecentAt(uint8_t i, ChimeEvent& e);   // i = 0: newest
-uint32_t eventsTotal();                     // closed since boot
+uint32_t eventsTotal();                     // closed since boot (or since "Delete all data")
+void    eventsClear();                      // "Delete all data": drop every event
 
 // SD queue (single consumer: the flush in sdcard.cpp).
 bool    eventsPeekUnsaved(ChimeEvent& e);

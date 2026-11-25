@@ -140,6 +140,8 @@ static const char SYSTEM_HEADER[] = "date,time,event,detail\n";
 static bool        g_ready = false;
 static bool        g_hadError = false;
 static uint8_t     g_mountFails = 0;      // in a row; picks the retry interval
+static struct Wipe* g_wipe = nullptr;     // "Delete all data" in progress
+static uint32_t    g_wipeFiles = 0, g_wipeFailed = 0;   // of the current / last delete
 static uint32_t    g_lastTry = 0, g_lastFlushMs = 0, g_lastFlushEpoch = 0;
 static uint32_t    g_cardMB = 0;
 static uint8_t     g_fatType = 0;
@@ -247,7 +249,11 @@ SdLogStatus sdGetStatus() {
     uint32_t since = millis() - g_lastTry, iv = retryInterval();
     s.retryInS = since >= iv ? 0 : (iv - since + 999) / 1000;
   }
-  s.msg            = (g_ready && !sdTimeOk()) ? "card ready, waiting for NTP time" : g_msg;
+  s.msg            = g_wipe ? "deleting all data"
+                   : (g_ready && !sdTimeOk()) ? "card ready, waiting for NTP time" : g_msg;
+  s.wiping         = g_wipe != nullptr;
+  s.wipeFiles      = g_wipeFiles;
+  s.wipeFailed     = g_wipeFailed;
   s.cardMB         = g_cardMB;
   s.fatType        = g_fatType;
   s.chimesSaved    = g_chimesSaved;
@@ -454,7 +460,10 @@ static void flush() {
   Serial.println(F("[SD] write failed; will re-mount"));
 }
 
+static bool wipeService();   // "Delete all data", below
+
 void sdService() {
+  if (wipeService()) return;          // deleting: no flushes until it is done
   uint32_t now = millis();
   if (!g_ready && (uint32_t)(now - g_lastTry) >= retryInterval()) mount();
   if (!g_ready || !sdTimeOk()) return;
@@ -476,6 +485,7 @@ void sdService() {
 SdBench sdBenchmark() {
   SdBench b = {false, 0, 0, 0, ""};
   if (!g_ready)    { b.msg = "no SD card"; return b; }
+  if (g_wipe)      { b.msg = "deleting data - try again when it has finished"; return b; }
   if (recActive()) { b.msg = "a recording is in progress - try again in a minute"; return b; }
   uint8_t buf[512];
   FsFile f;
@@ -511,6 +521,118 @@ SdBench sdBenchmark() {
   b.readKBs  = (float)BENCH_BYTES / 1024.0f / ((float)(tr ? tr : 1) / 1000.0f);
   b.msg      = "ok";
   return b;
+}
+
+// =====================================================================
+//  Delete all data
+// =====================================================================
+// Empties the log and recording folders (the folders stay) and removes
+// system.csv. A year of recordings is thousands of files and each removal
+// is several card round trips over software SPI, so the work is done a
+// slice per loop() pass: the mic, the web page and new chimes carry on
+// meanwhile (their rows queue in RAM and are written once it finishes).
+// SdFat has no recursive delete for exFAT, hence the folder walk here.
+#define WIPE_DEPTH     3     // folder levels open at once: /recordings/YYYY-MM-DD
+#define WIPE_SLICE_MS  40    // card work per loop() pass
+
+struct Wipe {
+  FsFile  dir[WIPE_DEPTH];   // the folder being emptied at each level
+  uint8_t len[WIPE_DEPTH];   // its path length in `path`
+  uint8_t depth = 0;
+  uint8_t top   = 0;         // index into WIPE_TOPS
+  char    path[96];
+};
+static const char* const WIPE_TOPS[] = {SD_CHIME_DIR, SD_EVENT_DIR, SD_LEVEL_DIR, SD_REC_DIR};
+
+bool sdWiping() { return g_wipe != nullptr; }
+
+bool sdWipeStart(const char** why) {
+  if (g_wipe)      { *why = "already deleting"; return false; }
+  if (recActive()) { *why = "a chime is being recorded - try again in a minute"; return false; }
+  if (g_ready) {
+    g_wipe = new (std::nothrow) Wipe();
+    if (!g_wipe)   { *why = "not enough memory - try again"; return false; }
+  }
+  // Rows still waiting for the card are old data too.
+  g_cqN = 0;
+  g_sqN = 0;
+  g_chimesSaved = g_eventsSaved = g_levelRows = g_chimesLost = 0;
+  g_lastFlushEpoch = 0;
+  g_wipeFiles = g_wipeFailed = 0;
+  if (!g_wipe) sdQueueSystem("data_cleared", "no card: memory only");
+  Serial.println(F("[SD] deleting all data"));
+  return true;
+}
+
+static void wipeFinish() {
+  delete g_wipe;
+  g_wipe = nullptr;
+  if (g_sd.exists(SD_SYSTEM_PATH)) {
+    if (g_sd.remove(SD_SYSTEM_PATH)) g_wipeFiles++; else g_wipeFailed++;
+  }
+  if (g_sd.exists(BENCH_PATH)) g_sd.remove(BENCH_PATH);
+  char d[48];
+  snprintf(d, sizeof(d), "%lu files deleted; %lu failed",
+           (unsigned long)g_wipeFiles, (unsigned long)g_wipeFailed);
+  Serial.printf("[SD] data cleared: %s\n", d);
+  sdQueueSystem("data_cleared", d);     // first row of the new system.csv
+}
+
+// One slice of the delete. True while a delete is in progress.
+static bool wipeService() {
+  if (!g_wipe) return false;
+  if (!g_ready) {                       // card pulled mid-way: stop, keep the rest
+    delete g_wipe;
+    g_wipe = nullptr;
+    g_wipeFailed++;
+    return false;
+  }
+  Wipe& w = *g_wipe;
+  if (g_activity) g_activity(true);
+  uint32_t t0 = millis();
+  while ((uint32_t)(millis() - t0) < WIPE_SLICE_MS) {
+    if (w.depth == 0 && !w.dir[0].isOpen()) {           // next top folder
+      if (w.top >= sizeof(WIPE_TOPS) / sizeof(WIPE_TOPS[0])) { wipeFinish(); break; }
+      strlcpy(w.path, WIPE_TOPS[w.top], sizeof(w.path));
+      w.len[0] = (uint8_t)strlen(w.path);
+      if (!w.dir[0].open(w.path, O_RDONLY)) w.top++;    // missing: nothing to delete
+      continue;
+    }
+    FsFile e;
+    if (!e.openNext(&w.dir[w.depth], O_RDONLY)) {       // this folder is empty now
+      w.dir[w.depth].close();
+      if (w.depth == 0) { w.top++; continue; }          // a top folder stays
+      if (!g_sd.rmdir(w.path)) g_wipeFailed++;
+      w.depth--;
+      w.path[w.len[w.depth]] = '\0';
+      continue;
+    }
+    char nm[64];
+    e.getName(nm, sizeof(nm));
+    bool isDir = e.isDir();
+    e.close();
+    size_t L = w.len[w.depth];
+    int n = snprintf(w.path + L, sizeof(w.path) - L, "/%s", nm);
+    if (n <= 0 || (size_t)n >= sizeof(w.path) - L) {   // name too long for us: leave it
+      g_wipeFailed++;
+      w.path[L] = '\0';
+      continue;
+    }
+    if (isDir) {
+      if (w.depth + 1 < WIPE_DEPTH && w.dir[w.depth + 1].open(w.path, O_RDONLY)) {
+        w.depth++;
+        w.len[w.depth] = (uint8_t)strlen(w.path);
+      } else {
+        g_wipeFailed++;                                 // nested deeper than we go
+        w.path[L] = '\0';
+      }
+      continue;
+    }
+    if (g_sd.remove(w.path)) g_wipeFiles++; else g_wipeFailed++;
+    w.path[L] = '\0';
+  }
+  if (g_activity) g_activity(false);
+  return true;
 }
 
 // =====================================================================

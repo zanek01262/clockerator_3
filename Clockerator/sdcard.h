@@ -37,6 +37,9 @@ struct SdLogStatus {
   uint8_t     chimesPending;
   uint32_t    lastFlushEpoch; // 0 = none yet
   uint32_t    retryInS;       // no card: seconds to the next mount attempt
+  bool        wiping;         // "Delete all data" in progress
+  uint32_t    wipeFiles;      // files deleted by the current / last delete
+  uint32_t    wipeFailed;     // and those that could not be
 };
 
 void     sdBegin();           // mount the card (failure is not fatal)
@@ -60,6 +63,13 @@ void     sdQueueChime(uint64_t epochMs, float peakPa, float pitchHz, uint8_t str
 // System log row. Rows queued before NTP time is valid are stamped
 // from their uptime once the time is known.
 void     sdQueueSystem(const char* event, const char* detail);
+
+// "Delete all data": empties /chimes, /events, /levels and /recordings and
+// removes /system.csv, a slice per sdService() pass (see sdGetStatus() for
+// progress). Rows and counters not yet written are dropped at once. With no
+// card only those are cleared. False (with *why) while a clip is recording.
+bool     sdWipeStart(const char** why);
+bool     sdWiping();          // a delete is in progress: no new recordings
 
 // Write speed test: 256 KB written and read back in /bench.tmp (removed
 // again). False if the card is missing or busy recording.

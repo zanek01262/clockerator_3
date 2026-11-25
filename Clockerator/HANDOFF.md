@@ -124,8 +124,10 @@ the Microphone panel ever says "no data", check that first.
    page when done. Check it sounds right (not chipmunked/slowed — that would
    mean the audio rate assumption in §6 is wrong).
 5. **Detection:** let the clock strike. Tune the threshold to ~⅔ of the
-   quietest strike's peak (Live signal / "last chime" figure). Optional:
-   **Learn chime** + tone filter.
+   quietest strike's peak (Live signal / "last chime" figure); it goes to
+   120 dB. Optional: **Learn chime** (next live strike) or **Learn chime from
+   this** (a recording being played) + tone filter. Then **Delete all data**
+   to start the logs clean.
 
 ---
 
@@ -228,6 +230,20 @@ error starts the fast tries over. The slow rate matters because a try with no
 card can block `loop()` ~3 s (SdFat sends CMD0 10× with a 300 ms busy-wait
 each when MISO floats low). `POST /api/sd/retry` ("Check now") tries at once.
 
+**Delete all data (3.2.0)** (`sdWipeStart()` / `wipeService()` in
+`sdcard.cpp`): empties `/chimes`, `/events`, `/levels`, `/recordings` (the
+folders stay) and removes `/system.csv`, plus the RAM side (strike count,
+events list, unsaved rows). SdFat has no recursive delete for exFAT, so it
+walks the folders itself, up to 3 levels deep, with one open handle per level
+on the heap (~370 B, freed when done). It runs in 40 ms slices from
+`sdService()` so detection and the page carry on; no flushes or new clips
+during it (chimes queue in RAM). Refused while a clip is recording. The new
+`system.csv` starts with a `data_cleared` row giving the counts.
+
+**Plot range (3.2.0):** the 25 ms scope ring stores dB × 100 per bin (was
+Pa × 10000, which capped at 6.55 Pa = 110 dB); `/api/history` values are
+32-bit. Both now cover the mic's full ~123 dB, so a 120 dB threshold plots.
+
 ---
 
 ## 8. HTTP API (STA mode)
@@ -247,9 +263,11 @@ each when MISO floats low). `POST /api/sd/retry` ("Check now") tries at once.
 | `/api/log?months=N` | GET | chime CSV |
 | `/api/logstat` | GET | why the chime log is empty |
 | `/api/learn/start` | POST | arm "Learn chime" (next strike's pitch, 60 s) |
+| `/api/learn/clip?f=<wav>` | POST | learn from a recording under `/recordings`: first strike found (first 12.8 ms block within 12 dB of the loudest in the first 3 s), measured like a live one; returns f1, f2, rel2, at (s) or msg |
 | `/api/learn/status` | GET | armed, valid, f1, f2, saved1, saved2, enabled, ratio |
 | `/api/history?n=` | GET | 1 s plot history |
-| `/api/sd` | GET | card status and counters; `retryIn` = seconds to the next mount try when there is no card |
+| `/api/sd` | GET | card status and counters; `retryIn` = seconds to the next mount try when there is no card; `wipe`, `wipeFiles`, `wipeFailed` = Delete all data progress |
+| `/api/data/clear` | POST | Delete all data (returns `card`: 0 = only RAM cleared); refused while recording |
 | `/api/sd/retry` | POST | try to mount a missing card now ("Check now") |
 | `/api/sd/bench` | POST | 256 KB write/read speed test |
 | `/api/sd/files[?m=YYYY-MM]` | GET | CSV listing |
@@ -271,11 +289,20 @@ AP mode: `/`, `/scan`, `/rescan`, `/save`.
 - Dashboard JS passes `node --check`; the page was driven in a browser against
   a mock device: events list, player, test-clip flow, spectrum/spectrogram,
   recordings browser, speed test, phone width (375 px, no horizontal scroll).
+  3.2.0: Delete all data (confirm, progress, summary, events cleared),
+  Learn chime from this (success and "no strike found"), 120 dB slider.
+- Learning from a recording: a Python mirror of the WAV parse, strike finder
+  and peak pick finds the first strike (also when a later one is louder),
+  rejects noise-only clips, and reads a clip whose data size was never
+  finalised.
   A WAV with the firmware's exact 512-byte header played with the right length.
 
 **On the board:** the user reports 3.0.0 running and working well
 (2026-11-24). The specific figures below haven't been reported yet. exFAT
-(3.1.0) compiles but hasn't been tried with an exFAT card.
+(3.1.0) compiles but hasn't been tried with an exFAT card. 3.2.0's Delete
+all data and learning from a recording haven't run on a real card yet
+(delete speed per file is unknown; expect seconds to a few minutes for a
+full card).
 
 **Not verified — needs the real board:**
 - I2S framing with 32 clocks/frame (§6), channel auto-pick, the repeats figure.
@@ -312,7 +339,8 @@ AP mode: `/`, `/scan`, `/rescan`, `/save`.
   1200 ms refractory, and a quarter + hour strike form one event, so an
   event's strike count isn't the hour then.
 - A recording started while the SD speed test runs loses its pre-roll.
-- Recordings are never deleted by the device; pull the card to clear space.
+- The device deletes nothing on its own: the card only shrinks via **Delete
+  all data** (everything at once). No age-based cleanup or per-file delete.
 - **Upgrade path** if bit-banged SD proves too slow: a LOLIN C3 mini
   (ESP32-C3) fits D1-mini shields and can put I2S (with 64 clocks) and
   hardware SPI on any pins — but the pin labels differ, so the wiring needs

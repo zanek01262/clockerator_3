@@ -99,6 +99,15 @@ bool eventsRecentAt(uint8_t i, ChimeEvent& e) {
 
 uint32_t eventsTotal() { return g_total; }
 
+// "Delete all data": forget every event, including one still in progress
+// (its remaining strikes start a new one).
+void eventsClear() {
+  g_head = g_count = g_unsaved = 0;
+  g_total = 0;
+  g_open  = false;
+  g_np    = 0;
+}
+
 bool eventsPeekUnsaved(ChimeEvent& e) {
   if (!g_unsaved) return false;
   e = g_ring[(g_head + EVENT_RECENT - g_unsaved) % EVENT_RECENT];

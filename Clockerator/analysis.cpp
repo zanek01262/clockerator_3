@@ -25,6 +25,7 @@
 #include "config.h"
 #include "settings.h"
 #include "sound.h"
+#include "sdcard.h"            // FsFile, for learning from a recording
 
 #define AN_DETECT_N   256
 #define AN_HALF       (ANALYSIS_N / 2)
@@ -113,21 +114,11 @@ static void cfft(float* d, int n) {
   }
 }
 
-// Load ANALYSIS_N ring samples from `start`, de-meaned and Hann-windowed,
-// FFT them, and leave the power spectrum in s_buf (see above).
-static bool powerSpectrum(uint32_t start) {
-  const int16_t* a = soundAudio();
-  uint32_t idx = soundAudioIdx();
-  if ((uint32_t)(idx - start) > AUDIO_RING || (int32_t)(idx - (start + ANALYSIS_N)) < 0)
-    return false;
-
-  // Copy first: soundService() runs during the FFT and refills the ring.
+// s_buf[0..ANALYSIS_N) holds samples: de-mean, Hann-window and FFT them,
+// leaving the power spectrum in s_buf (see above).
+static void spectrumOfBuf() {
   float mean = 0;
-  for (int i = 0; i < ANALYSIS_N; i++) {
-    float v = (float)a[(start + i) & AN_MASK];
-    s_buf[i] = v;
-    mean += v;
-  }
+  for (int i = 0; i < ANALYSIS_N; i++) mean += s_buf[i];
   mean /= ANALYSIS_N;
   // Periodic Hann window; cos(2 pi i / N) by rotation, re-anchored every
   // quarter turn so rounding can't build up.
@@ -176,6 +167,17 @@ static bool powerSpectrum(uint32_t start) {
     wi = wr * pi + wi * pr; wr = nwr;
     if (k == AN_HALF / 4) soundService();
   }
+}
+
+// Power spectrum of ANALYSIS_N ring samples from `start` (see above).
+static bool powerSpectrum(uint32_t start) {
+  const int16_t* a = soundAudio();
+  uint32_t idx = soundAudioIdx();
+  if ((uint32_t)(idx - start) > AUDIO_RING || (int32_t)(idx - (start + ANALYSIS_N)) < 0)
+    return false;
+  // Copy first: soundService() runs during the FFT and refills the ring.
+  for (int i = 0; i < ANALYSIS_N; i++) s_buf[i] = (float)a[(start + i) & AN_MASK];
+  spectrumOfBuf();
   return true;
 }
 
@@ -209,40 +211,141 @@ static float refine(int i) {
   return (float)i + off;
 }
 
-static int minBin() {
-  int m = (int)(PITCH_MIN_HZ * ANALYSIS_N / soundAudioRate()) + 1;
+static int minBin(float sr) {
+  int m = (int)(PITCH_MIN_HZ * ANALYSIS_N / sr) + 1;
   return m < 2 ? 2 : m;
+}
+
+// The two strongest peaks of the spectrum in s_buf, sampled at `sr`.
+static bool pickTones(float sr, StrikeTone& out) {
+  float hz = sr / ANALYSIS_N;
+  int lo = minBin(sr);
+  int p1 = findPeak(lo, AN_HALF - 1, -1, 0);
+  if (p1 < 0) return false;
+  int p2 = findPeak(lo, AN_HALF - 1, p1, 4);
+  out.f1   = refine(p1) * hz;
+  out.rel2 = (p2 >= 0) ? P(p2) / P(p1) : 0;
+  // 0.03 in POWER terms ~= 17% amplitude — harmonics are often much
+  // weaker than the fundamental; a power gate of 0.10 (31% amplitude)
+  // rejected real secondary partials.
+  out.f2   = (p2 >= 0 && out.rel2 >= 0.03f) ? refine(p2) * hz : 0;
+  return true;
+}
+
+// Make `t` the learned chime tone (saved; the tone filter uses it).
+static void keepLearned(const StrikeTone& t, float sr, const char* from) {
+  g_armed = false;
+  g_learn = {true, t.f1, t.f2, t.rel2, sr};
+  settings.toneF1 = t.f1;
+  settings.toneF2 = t.f2;
+  saveSettings();
+  Serial.printf("[LEARN] f1=%.1fHz f2=%.1fHz (rel %.2f) from %s\n",
+                (double)t.f1, (double)t.f2, (double)t.rel2, from);
 }
 
 bool analysisStrike(uint32_t start, StrikeTone& out) {
   if (!grabBuf()) return false;
-  bool ok = powerSpectrum(start);
-  if (ok) {
-    float sr = soundAudioRate(), hz = sr / ANALYSIS_N;
-    int lo = minBin();
-    int p1 = findPeak(lo, AN_HALF - 1, -1, 0);
-    if (p1 < 0) {
-      ok = false;
-    } else {
-      int p2 = findPeak(lo, AN_HALF - 1, p1, 4);
-      out.f1   = refine(p1) * hz;
-      out.rel2 = (p2 >= 0) ? P(p2) / P(p1) : 0;
-      // 0.03 in POWER terms ~= 17% amplitude — harmonics are often much
-      // weaker than the fundamental; a power gate of 0.10 (31% amplitude)
-      // rejected real secondary partials.
-      out.f2   = (p2 >= 0 && out.rel2 >= 0.03f) ? refine(p2) * hz : 0;
-      if (analysisLearnWaiting()) {
-        g_armed = false;
-        g_learn = {true, out.f1, out.f2, out.rel2, sr};
-        settings.toneF1 = out.f1;
-        settings.toneF2 = out.f2;
-        saveSettings();
-        Serial.printf("[LEARN] f1=%.1fHz f2=%.1fHz (rel %.2f)\n",
-                      (double)out.f1, (double)out.f2, (double)out.rel2);
-      }
+  float sr = soundAudioRate();
+  bool ok = powerSpectrum(start) && pickTones(sr, out);
+  if (ok && analysisLearnWaiting()) keepLearned(out, sr, "a live strike");
+  dropBuf();
+  return ok;
+}
+
+// ---- Learning from a recording on the SD card ----
+static uint32_t le32(const uint8_t* p) {
+  return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+// Find the PCM data of a 16-bit mono WAV: byte offset, sample count, rate.
+static const char* wavData(FsFile& f, uint32_t& off, uint32_t& n, float& sr) {
+  uint8_t h[16];
+  if (f.read(h, 12) != 12 || memcmp(h, "RIFF", 4) || memcmp(h + 8, "WAVE", 4))
+    return "not a WAV file";
+  uint32_t size = (uint32_t)f.fileSize(), pos = 12;
+  sr = 0;
+  while (pos + 8 <= size) {
+    if (!f.seekSet(pos) || f.read(h, 8) != 8) break;
+    uint32_t len = le32(h + 4);
+    if (!memcmp(h, "fmt ", 4)) {
+      if (len < 16 || f.read(h, 16) != 16) break;
+      if (h[0] != 1 || h[1] || h[2] != 1 || h[3] || h[14] != 16 || h[15])
+        return "only 16-bit mono recordings can be used";
+      sr = (float)le32(h + 4);
+    } else if (!memcmp(h, "data", 4)) {
+      if (sr <= 0) break;
+      off = pos + 8;
+      // A clip cut short (power loss) may still say 0 bytes: use what is there.
+      uint32_t avail = size - off;
+      n = ((len && len <= avail) ? len : avail) / 2;
+      return nullptr;
     }
+    pos += 8 + len + (len & 1);
+  }
+  return "the recording could not be read";
+}
+
+#define LEARN_BLK     128     // 12.8 ms blocks to find the first strike
+#define LEARN_SCAN_S  3       // look for it in this much of the clip
+
+bool analysisLearnFromClip(const char* path, StrikeTone& out, float* atSec, const char** err) {
+  FsFile f;
+  if (!f.open(path, O_RDONLY)) { *err = "recording not found"; return false; }
+  uint32_t off = 0, n = 0;
+  float sr = 0;
+  *err = wavData(f, off, n, sr);
+  if (!*err && (sr < 2000 || sr > 48000)) *err = "unexpected sample rate";
+  if (!*err && n < ANALYSIS_N + 4 * LEARN_BLK) *err = "the recording is too short";
+  if (!*err && !grabBuf()) *err = "not enough memory - try again";
+  if (*err) { f.close(); return false; }
+
+  // 1) RMS of each block of the first few seconds, parked in s_buf. The
+  //    first strike is where the level first comes within 12 dB of the
+  //    loudest block: a clip starts a quarter second before it, and a test
+  //    clip may start anywhere.
+  int16_t blk[LEARN_BLK];
+  uint32_t nb = (uint32_t)(LEARN_SCAN_S * sr) / LEARN_BLK;
+  if (nb > n / LEARN_BLK) nb = n / LEARN_BLK;
+  if (nb > ANALYSIS_N) nb = ANALYSIS_N;
+  float peak = 0, quiet = 1e30f;
+  f.seekSet(off);
+  for (uint32_t b = 0; b < nb; b++) {
+    if (f.read(blk, sizeof(blk)) != (int)sizeof(blk)) { nb = b; break; }
+    float m = 0, s2 = 0;
+    for (int i = 0; i < LEARN_BLK; i++) m += blk[i];
+    m /= LEARN_BLK;
+    for (int i = 0; i < LEARN_BLK; i++) { float d = blk[i] - m; s2 += d * d; }
+    float r = sqrtf(s2 / LEARN_BLK);
+    s_buf[b] = r;
+    if (r > peak) peak = r;
+    if (r < quiet) quiet = r;
+  }
+  uint32_t onset = 0;
+  while (onset < nb && s_buf[onset] < 0.25f * peak) onset++;
+  bool ok = nb > 0 && peak >= 20.0f && peak >= 4.0f * quiet;   // a strike stands 12 dB out
+  if (!ok) *err = "no strike found in this recording";
+
+  // 2) The same window a live strike is measured on: from just after the
+  //    hammer's click, ANALYSIS_N samples.
+  if (ok) {
+    uint32_t start = onset * LEARN_BLK + (uint32_t)(PITCH_SKIP_MS * sr / 1000.0f);
+    if (start + ANALYSIS_N > n) start = n - ANALYSIS_N;
+    ok = f.seekSet(off + start * 2);
+    for (int i = 0; ok && i < ANALYSIS_N; i += LEARN_BLK) {
+      ok = f.read(blk, sizeof(blk)) == (int)sizeof(blk);
+      for (int j = 0; ok && j < LEARN_BLK; j++) s_buf[i + j] = (float)blk[j];
+    }
+    if (!ok) *err = "the recording could not be read";
+  }
+  f.close();
+  if (ok) {
+    spectrumOfBuf();
+    ok = pickTones(sr, out);
+    if (ok) keepLearned(out, sr, path);
+    else    *err = "no clear pitch in this recording";
   }
   dropBuf();
+  *atSec = (float)(onset * LEARN_BLK) / sr;
   return ok;
 }
 
@@ -255,7 +358,7 @@ bool analysisSpectrum(uint8_t* db, float* peakHz, float* peakDb) {
       float d = db10(P(k)) + off + 0.5f;
       db[k] = d < 0 ? 0 : d > 255 ? 255 : (uint8_t)d;
     }
-    int p = findPeak(minBin(), AN_HALF - 1, -1, 0);
+    int p = findPeak(minBin(soundAudioRate()), AN_HALF - 1, -1, 0);
     *peakHz = p >= 0 ? refine(p) * soundAudioRate() / ANALYSIS_N : 0;
     *peakDb = p >= 0 ? db10(P(p)) + off : 0;
   }

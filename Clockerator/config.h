@@ -66,8 +66,10 @@
 //         strikes grouped into chime events, onset (rise) detection so a
 //         ringing strike can't re-trigger, SD speed test, mic diagnostics
 //   3.1.0 exFAT cards (SDXC, 64 GB and up) work without reformatting
+//   3.2.0 "Delete all data"; learn the chime from a saved recording;
+//         threshold up to 120 dB (plot and meter cover the mic's full range)
 #define PRODUCT_NAME "Clockerator"
-#define FW_VERSION   "3.1.0"
+#define FW_VERSION   "3.2.0"
 
 // ---------- SoftAP provisioning ----------
 #define AP_SSID  "Clockerator-Setup"

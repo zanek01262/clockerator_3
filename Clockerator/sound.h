@@ -55,6 +55,7 @@ SoundState soundGetState();
 float      soundSampleRate();              // real I2S frame rate, Hz
 float      soundPaToDb(float pa);          // Pa -> dB SPL (0 for silence)
 void       soundNoteChimeEpoch(uint32_t epoch);
+void       soundClearCounts();             // "Delete all data": strike count, last strike, unsaved level rows
 
 // ---- Audio stream ----
 // DC-blocked mic audio at soundAudioRate() (~10 kHz), newest AUDIO_RING
@@ -88,8 +89,8 @@ uint32_t   soundHistorySeq();                   // total seconds ever recorded
 uint32_t   soundHistoryEndBin();
 // Entry by ABSOLUTE number k (0 = first entry since boot), as excess (Pa) *
 // HIST_SCALE, so a reader that keeps sampling while it streams isn't shifted
-// by entries added meanwhile.
-uint16_t   soundHistoryAtSeq(uint32_t k);
+// by entries added meanwhile. Up to ~474,000 (127.5 dB), hence 32 bits.
+uint32_t   soundHistoryAtSeq(uint32_t k);
 
 // Level log rows for the SD card: one per settings.levelSec wall-clock
 // seconds (only while NTP time is valid). dB values are x10 (624 = 62.4 dB).

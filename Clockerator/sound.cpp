@@ -148,17 +148,23 @@ static uint32_t g_lvlSlot = 0;          // epoch / levelSec of the open interval
 static float    g_lvlSum = 0, g_lvlMax = 0;
 static uint32_t g_lvlN = 0;
 
-// excess (Pa) -> uint16 at HIST_SCALE resolution, rounded and clamped.
-static uint16_t toScaled(float v) {
-  v = v * (float)HIST_SCALE + 0.5f;
-  if (v < 0) v = 0;
-  if (v > 65535.0f) v = 65535.0f;
-  return (uint16_t)v;
-}
-
 float soundPaToDb(float pa) {
   if (!(pa > 2e-5f)) return 0.0f;
   return 20.0f * log10f(pa / 2e-5f);
+}
+
+// Scope bin: excess (Pa) stored as dB SPL x 100 (0 = silence). A linear
+// uint16 (Pa x 10000) topped out at 6.55 Pa = 110 dB, below a loud strike
+// close to the mic; this covers the mic's whole range (~123 dB) in 0.01 dB
+// steps with the same 2 bytes.
+static uint16_t scopeCode(float pa) {
+  float c = soundPaToDb(pa) * 100.0f + 0.5f;
+  if (c < 1.0f) return 0;
+  if (c > 65535.0f) c = 65535.0f;
+  return (uint16_t)c;
+}
+static float scopePa(uint16_t code) {
+  return code ? 2e-5f * powf(10.0f, (float)code / 2000.0f) : 0.0f;
 }
 
 static int16_t toDb10(float pa) {
@@ -288,7 +294,7 @@ static void processBlock(float msPa, uint32_t tMs) {
   if (!g_binInit) { g_binStart = tMs; g_binInit = true; }
   if (excess > g_binMax) g_binMax = excess;
   if ((uint32_t)(tMs - g_binStart) >= (uint32_t)SCOPE_BIN_MS) {
-    g_ring[g_ringSeq % SCOPE_RING] = toScaled(g_binMax);
+    g_ring[g_ringSeq % SCOPE_RING] = scopeCode(g_binMax);
     g_ringSeq++;
     if (g_binMax > g_histMax) g_histMax = g_binMax;
     if (++g_histBins >= HIST_BINS) {
@@ -528,19 +534,30 @@ SoundState soundGetState() { return g_state; }
 
 uint32_t soundScopeSeq() { return g_ringSeq; }
 float soundScopeAt(uint32_t bin) {
-  return g_ring[bin % SCOPE_RING] / (float)HIST_SCALE;
+  return scopePa(g_ring[bin % SCOPE_RING]);
 }
 
 void soundNoteChimeEpoch(uint32_t epoch) { g_state.lastChimeEpoch = epoch; }
+
+// "Delete all data": forget the strikes so far and any level rows not yet
+// on the card. g_strikeN (the recorder's strike counter) is left alone.
+void soundClearCounts() {
+  g_state.chimeCount     = 0;
+  g_state.lastChimeEpoch = 0;
+  g_state.lastChimePeak  = 0;
+  g_state.lastChimePitch = 0;
+  g_lvlTail    = g_lvlHead;
+  g_lvlDropped = 0;
+}
 
 uint16_t soundHistoryCount() {
   return (g_histSeq < HIST_SECONDS) ? (uint16_t)g_histSeq : (uint16_t)HIST_SECONDS;
 }
 uint32_t soundHistorySeq() { return g_histSeq; }
 uint32_t soundHistoryEndBin() { return g_histEndBin; }
-uint16_t soundHistoryAtSeq(uint32_t k) {
+uint32_t soundHistoryAtSeq(uint32_t k) {
   if (k >= g_histSeq || g_histSeq - k > HIST_SECONDS) return 0;   // not retained
-  return toScaled(histPa(g_hist[k % HIST_SECONDS]));
+  return (uint32_t)(histPa(g_hist[k % HIST_SECONDS]) * (float)HIST_SCALE + 0.5f);
 }
 
 // Single producer (soundService, possibly nested inside an SD flush) and

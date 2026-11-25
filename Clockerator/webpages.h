@@ -360,7 +360,12 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
   @keyframes pulse{50%{opacity:.35}}
   audio{display:block; width:100%; height:38px; margin-bottom:12px}
   audio[hidden],.nowplay[hidden]{display:none}
-  .nowplay{font-family:var(--mono); font-size:12px; color:var(--dim); margin:-4px 0 8px}
+  .nowplay{font-family:var(--mono); font-size:12px; color:var(--dim); margin:-4px 0 8px;
+    display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px}
+  .nowplay .btn{font-family:var(--body)}
+  #learnClipSt{font-family:var(--body); font-size:13px; flex-basis:100%}
+  #learnClipSt:empty{display:none}
+  button.btn.sm{padding:5px 12px; font-size:12.5px}
   .evlist{max-height:340px; overflow:auto; border:1px solid var(--line); border-radius:9px}
   .ev{display:grid; grid-template-columns:76px 72px 1fr auto; align-items:center; gap:8px;
     padding:9px 12px; border-bottom:1px solid rgba(63,49,37,.6)}
@@ -426,6 +431,8 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
             <option value="0.3">0.3 Pa (84 dB)</option>
             <option value="1">1 Pa (94 dB)</option>
             <option value="3">3 Pa (104 dB)</option>
+            <option value="10">10 Pa (114 dB)</option>
+            <option value="30">30 Pa (124 dB)</option>
           </select></span>
           <span class="pair"><label for="xwin">Window</label>
           <select id="xwin" data-help="tt:Time window|How much history the plot shows. Shorter windows make individual chimes easier to see; longer ones show the pattern of a whole strike sequence.">
@@ -449,10 +456,12 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
       </div>
 
       <div class="panel" id="evPanel">
-        <h2 data-help="tt:Chime events|Each time the clock chimes, its strikes are grouped into one event (strikes closer together than the event gap) and recorded as a sound clip on the SD card, starting a quarter second before the first strike. Newest first; press &#9654; to listen, &#10515; to download the WAV.">Chime events</h2>
+        <h2 data-help="tt:Chime events|Each time the clock chimes, its strikes are grouped into one event (strikes closer together than the event gap) and recorded as a sound clip on the SD card, starting a quarter second before the first strike. Newest first; press &#9654; to listen, &#10515; to download the WAV. While a recording plays, &ldquo;Learn chime from this&rdquo; takes the chime&rsquo;s pitch from it.">Chime events</h2>
         <div class="recline"><span class="recdot" id="recDot"></span><span id="recMsg">checking&hellip;</span></div>
         <audio id="player" controls preload="none" hidden></audio>
-        <div class="nowplay" id="nowPlay" hidden></div>
+        <div class="nowplay" id="nowPlay" hidden><span id="nowPlayT"></span>
+          <button class="btn sm" id="learnClip" data-help="tt:Learn from this recording|Takes the pitch of the first strike in this recording as the chime&rsquo;s pitch, the same as Learn chime does with a live strike. Then turn on the Tone filter in Detection tuning to ignore other sounds.">Learn chime from this</button>
+          <span id="learnClipSt" aria-live="polite"></span></div>
         <div class="evlist" id="evList"><div class="evempty">Loading&hellip;</div></div>
         <div class="actions" style="margin-top:12px">
           <button class="btn" id="recTest" data-help="tt:Test clip|Records 10 seconds right now and plays it back when done &mdash; the quickest way to check the microphone placement and how the clock will sound.">Record 10 s test clip</button>
@@ -472,8 +481,8 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
       <div class="panel">
         <h2>Detection tuning</h2>
         <div class="ctl">
-          <label data-help="tt:Threshold|How far above the background a sound must rise to count as a chime, as a sound level. Lower = more sensitive. Aim for about two thirds of your quietest strike&rsquo;s peak.">Threshold</label>
-          <input type="range" id="thr" min="50" max="100" step="0.5">
+          <label data-help="tt:Threshold|How far above the background a sound must rise to count as a chime, as a sound level. Lower = more sensitive. Aim for about two thirds of your quietest strike&rsquo;s peak. Goes up to 120 dB, the loudest the microphone can measure.">Threshold</label>
+          <input type="range" id="thr" min="50" max="120" step="0.5" aria-label="Threshold">
           <output id="thrV">74.0 dB</output>
         </div>
         <div class="sub" id="thrPa">0.100 Pa above background</div>
@@ -492,7 +501,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
           <span class="saved" id="saved">saved &#10003;</span>
         </div>
         <div class="actions" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
-          <button class="btn" id="learn" data-help="tt:Learn chime|Takes the pitch of the next strike (its two strongest frequencies) so the device can tell real chimes from other noises.">Learn chime</button>
+          <button class="btn" id="learn" data-help="tt:Learn chime|Takes the pitch of the next strike (its two strongest frequencies) so the device can tell real chimes from other noises. To use a strike already recorded instead, play it under Chime events and press &ldquo;Learn chime from this&rdquo;.">Learn chime</button>
           <span id="learnSt" style="font-size:13px;color:var(--dim)"></span>
           <span class="toggle-label" data-help="tt:Tone filter|When on, a sound only counts as a chime if it matches the learned pitch. Learn a chime first.">Tone filter</span>
           <select id="toneEn"><option value="0">Off</option><option value="1">On</option></select>
@@ -520,7 +529,7 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
           <div class="mk amb" id="mAmb" style="left:0"></div>
           <div class="mk trg" id="mTrg" style="left:0"></div>
         </div>
-        <div class="mscale"><span>30</span><span>50</span><span>70</span><span>90</span><span>110 dB</span></div>
+        <div class="mscale"><span>30</span><span>60</span><span>90</span><span>120 dB</span></div>
         <div class="gverdict dim" id="mVerdict">&mdash;</div>
         <div class="gadvice" id="mAdvice">Waiting for the microphone&hellip;</div>
         <div class="gnums">
@@ -623,9 +632,11 @@ static const char DASH_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html><html lang="en"><h
         </div>
         <div class="actions">
           <a class="btn" href="/update" target="_blank" data-help="tt:Firmware update|Upload a compiled .bin straight from the browser. This bypasses the Arduino IDE, espota and mDNS entirely &mdash; use Sketch &gt; Export Compiled Binary, then drop the file here.">Update firmware</a>
+          <button class="btn danger" id="wipe" data-help="tt:Delete all data|Permanently deletes every chime log, event, sound-level file, the system log and all recordings on the SD card, and resets the strike count and the events list. Settings, WiFi and the learned chime are kept. Use it to start fresh, e.g. after setting up.">Delete all data</button>
           <button class="btn danger" id="reset">Reset WiFi</button>
           <span class="hk" id="fw"></span>
         </div>
+        <div class="hk" id="devInfo" style="margin-top:10px" aria-live="polite"></div>
       </div>
 
     </div>
@@ -722,7 +733,7 @@ function drawScope(){
       for(let b=lo;b<=newestSeq;b++){const v=buf[b%N]; if(v>m)m=v;}
     }
     // Keep the threshold line(s) in view, so it is clear when nothing crosses.
-    target=Math.max(0.005,threshold*1.25,(thrPreview||0)*1.25,Math.min(6,m*1.25));
+    target=Math.max(0.005,threshold*1.25,(thrPreview||0)*1.25,Math.min(30,m*1.25));
   }else target=+yMode;
   yMax+=(target-yMax)*0.08;
 
@@ -1038,7 +1049,7 @@ toneEn.onchange=function(){postCfg('toneEnabled='+this.value);};
 
 // ---- Microphone health ----
 const VCLS={listening:'good',starting:'dim','no data':'bad','no i2s':'bad',clipping:'warn','too quiet':'warn'};
-const pct=d=>Math.max(0,Math.min(100,(d-30)/80*100));   // 30..110 dB -> 0..100%
+const pct=d=>Math.max(0,Math.min(100,(d-30)/90*100));   // 30..120 dB -> 0..100%
 async function pollMic(){
   try{
     const m=await (await fetch('/api/mic')).json();
@@ -1073,7 +1084,7 @@ function ago(s){
   if(s<5400) return Math.floor(s/60)+'m ago';
   return Math.floor(s/3600)+'h ago';
 }
-let sdToday='';
+let sdToday='', wiping=false;       // wiping: "Delete all data" running on the card
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 const inTime=s=>s<60?s+' s':Math.ceil(s/60)+' min';
 async function sdRefresh(){
@@ -1081,9 +1092,18 @@ async function sdRefresh(){
     const d=await (await fetch('/api/sd')).json();
     const st=$('sdState');
     st.className='sdstate '+(d.ready?'on':'off');
-    $('sdMsg').textContent=d.ready?(d.msg==='recording'?'Logging to the SD card':d.msg):d.msg;
-    $('sdNext').textContent=d.ready?'':(d.retryIn?'· next check in '+inTime(d.retryIn):'· checking…');
+    $('sdMsg').textContent=d.wipe?'Deleting all data…':d.ready?(d.msg==='recording'?'Logging to the SD card':d.msg):d.msg;
+    $('sdNext').textContent=d.wipe?'· '+plural(d.wipeFiles,'file')+' deleted':
+      d.ready?'':(d.retryIn?'· next check in '+inTime(d.retryIn):'· checking…');
     $('sdRetry').hidden=!!d.ready;
+    if(d.wipe){
+      wiping=true;$('wipe').disabled=true;
+      $('devInfo').textContent='Deleting… '+plural(d.wipeFiles,'file')+' so far. Chimes are still detected meanwhile.';
+    }else if(wiping){
+      wiping=false;$('wipe').disabled=false;
+      $('devInfo').textContent='All data deleted: '+plural(d.wipeFiles,'file')+
+        (d.wipeFailed?', '+d.wipeFailed+' could not be deleted':'')+'.';
+    }
     $('sdCard').textContent=d.ready?(d.cardMB>=1024?(d.cardMB/1024).toFixed(1)+' GB':d.cardMB+' MB')+(d.fat===64?' exFAT':' FAT'+d.fat):'—';
     $('sdLast').textContent=d.lastWrite?ago(Math.max(0,d.now-d.lastWrite)):'—';
     $('sdPend').textContent=plural(d.pending,'strike')+', '+plural(d.levelsPending,'level row');
@@ -1099,7 +1119,7 @@ async function sdRefresh(){
     }else{a.removeAttribute('href');a.style.opacity=.45;}
   }catch(e){}
 }
-async function pollSd(){await sdRefresh();setTimeout(pollSd,5000);}
+async function pollSd(){await sdRefresh();setTimeout(pollSd,wiping?1000:5000);}
 pollSd();
 $('sdRetry').onclick=async()=>{
   const b=$('sdRetry'),r=$('sdInfo');
@@ -1313,17 +1333,36 @@ $('logLoad').onclick=loadLog;
 
 // ---- Chime events + recordings ----
 const player=$('player');
-let playingRec='', pendingTest='', evOpen=null;
+let playingRec='', curRec='', pendingTest='', evOpen=null;   // curRec: last clip played
 const evMap=new Map();             // epoch ms -> event (since boot + loaded history)
 const recUrl=p=>getUrl(p);
 const pad2=n=>String(n).padStart(2,'0');
 function play(p){
   if(!p)return;
   playingRec=p;player.hidden=false;player.src=recUrl(p);player.play().catch(()=>{});
-  const np=$('nowPlay');np.hidden=false;
-  np.textContent='Playing '+p.replace('/recordings/','').replace('/',' · ').replace('.wav','');
+  if(p!==curRec)$('learnClipSt').textContent='';
+  curRec=p;
+  $('nowPlay').hidden=false;
+  $('nowPlayT').textContent='Playing '+p.replace('/recordings/','').replace('/',' · ').replace('.wav','');
   renderEvents();
 }
+$('learnClip').onclick=async()=>{
+  const b=$('learnClip'),st=$('learnClipSt');
+  if(!curRec)return;
+  b.disabled=true;st.textContent='Finding the first strike…';
+  try{
+    const j=await (await fetch('/api/learn/clip?f='+encodeURIComponent(curRec),{method:'POST'})).json();
+    if(!j.ok){st.textContent='Could not learn: '+j.msg+'.';}
+    else{
+      learned=[j.f1,j.f2];
+      const hz='learned: '+j.f1.toFixed(0)+' Hz'+(j.f2>0?' + '+j.f2.toFixed(0)+' Hz':'');
+      learnSt.textContent=hz;
+      st.textContent='Chime '+hz+' (first strike at '+j.at.toFixed(2)+' s).'+
+        (toneEn.value==='1'?' The tone filter uses it now.':' Turn on the Tone filter in Detection tuning to use it.');
+    }
+  }catch(e){st.textContent='Could not reach the device.';}
+  b.disabled=false;
+};
 player.onended=()=>{playingRec='';renderEvents();};
 function evRow(e,now){
   const d=new Date(e.t*1000+(e.ms||0));
@@ -1547,6 +1586,29 @@ $('specGo').onclick=()=>specToggle(!specOn);
     if(!helpOn) hideTip();
   };
 })();
+
+// ---- Delete all data ----
+function clearLocalData(){
+  evMap.clear();evOpen=null;renderEvents();
+  player.pause();player.removeAttribute('src');player.hidden=true;
+  $('nowPlay').hidden=true;playingRec='';curRec='';
+  $('logWrap').style.display='none';$('logTable').innerHTML='';$('logInfo').textContent='';
+  $('sdFiles').style.display='none';
+}
+$('wipe').onclick=async()=>{
+  if(!confirm('Delete all data?\n\nThis permanently deletes every chime log, event, sound-level file, '+
+    'the system log and all recordings on the SD card, and resets the strike count and the events list.\n\n'+
+    'Settings, WiFi and the learned chime are kept. This cannot be undone.'))return;
+  const b=$('wipe'),r=$('devInfo');
+  b.disabled=true;r.textContent='Deleting…';
+  try{
+    const j=await (await fetch('/api/data/clear',{method:'POST'})).json();
+    if(!j.ok){r.textContent='Nothing deleted: '+j.msg+'.';b.disabled=false;return;}
+    clearLocalData();
+    if(!j.card){r.textContent='Strike count and events cleared. There is no SD card, so there was nothing on a card to delete.';b.disabled=false;return;}
+    wiping=true;sdRefresh();
+  }catch(e){r.textContent='Could not reach the device.';b.disabled=false;}
+};
 
 $('reset').onclick=()=>{
   if(!confirm('Forget WiFi and return to setup mode?'))return;

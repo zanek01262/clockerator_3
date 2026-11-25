@@ -37,6 +37,7 @@ static char        s_path[64] = "";
 static uint32_t    s_clips = 0, s_lostSamples = 0, s_errors = 0;
 static uint16_t    s_maxStallMs = 0;
 static const char* s_msg = "waiting for a chime";
+static const char  MSG_WIPING[] = "not recording: deleting data";
 
 static uint32_t samplesFor(uint32_t ms) {
   return (uint32_t)((float)ms * soundAudioRate() / 1000.0f + 0.5f);
@@ -95,6 +96,7 @@ static void failClip(const char* msg) {
 
 static bool openClip(uint32_t startIdx, uint32_t stopIdx, const char* suffix) {
   if (!sdReady())  { s_msg = "not recording: no SD card"; return false; }
+  if (sdWiping())  { s_msg = MSG_WIPING; return false; }
   if (!sdTimeOk()) { s_msg = "not recording: waiting for network time"; return false; }
 
   // The pre-roll can only reach back as far as the ring still holds.
@@ -252,6 +254,7 @@ bool recActive() { return s_active; }
 const char* recCurrentPath() { return s_active ? s_path : ""; }
 
 RecStatus recGetStatus() {
+  if (s_msg == MSG_WIPING && !sdWiping()) s_msg = "waiting for a chime";
   RecStatus r;
   r.active     = s_active;
   r.msg        = s_active ? "recording" : (!settings.recEnabled ? "recording is off" : s_msg);

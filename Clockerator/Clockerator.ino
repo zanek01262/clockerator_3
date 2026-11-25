@@ -324,6 +324,29 @@ static void handleLearnStart() {
   }
 }
 
+// Learn the chime from a saved recording instead of the next live strike:
+// POST /api/learn/clip?f=/recordings/YYYY-MM-DD/HH-MM-SS.wav
+static void handleLearnClip() {
+  String p = server.arg("f");
+  bool safe = p.length() > 14 && p.length() < 64 && p.startsWith(SD_REC_DIR "/")
+           && p.endsWith(".wav") && p.indexOf("..") < 0;
+  for (size_t i = 0; safe && i < p.length(); i++)
+    safe = isalnum((unsigned char)p[i]) || strchr("/-_.", p[i]);
+  const char* err = nullptr;
+  if (!safe)                         err = "not a recording";
+  else if (!sdReady())               err = "no SD card";
+  else if (sdWiping())               err = "deleting data - try again when it has finished";
+  else if (p == recCurrentPath())    err = "this clip is still being recorded - try again when it ends";
+  StrikeTone t = {0, 0, 0};
+  float at = 0;
+  if (!err) analysisLearnFromClip(p.c_str(), t, &at, &err);
+  char b[160];
+  if (err) snprintf(b, sizeof(b), "{\"ok\":0,\"msg\":\"%s\"}", err);
+  else     snprintf(b, sizeof(b), "{\"ok\":1,\"f1\":%.1f,\"f2\":%.1f,\"rel2\":%.3f,\"at\":%.2f}",
+                    (double)t.f1, (double)t.f2, (double)t.rel2, (double)at);
+  server.send(200, "application/json", b);
+}
+
 static void handleLearnStatus() {
   LearnResult r = analysisGetLearn();
   char b[200];
@@ -500,7 +523,7 @@ static void handleHistory() {
   char chunk[256]; int used = 0;
   for (uint16_t i = 0; i < n; i++) {
     int w = snprintf(chunk + used, sizeof(chunk) - used,
-                     "%u%s", soundHistoryAtSeq(firstSeq + i), (i + 1 < n) ? "," : "");
+                     "%lu%s", (unsigned long)soundHistoryAtSeq(firstSeq + i), (i + 1 < n) ? "," : "");
     if (w < 0) break;
     used += w;
     if (used > (int)sizeof(chunk) - 12) {          // flush before overflow
@@ -542,13 +565,15 @@ static void handleSd() {
     localtime_r(&now, &tmv);
     strftime(today, sizeof(today), "%Y-%m-%d", &tmv);
   }
-  char buf[500];
+  char buf[560];
   snprintf_P(buf, sizeof(buf), PSTR(
-    "{\"ready\":%d,\"msg\":\"%s\",\"retryIn\":%lu,\"cardMB\":%lu,\"fat\":%u,\"chimesSaved\":%lu,"
+    "{\"ready\":%d,\"msg\":\"%s\",\"retryIn\":%lu,\"wipe\":%d,\"wipeFiles\":%lu,\"wipeFailed\":%lu,"
+    "\"cardMB\":%lu,\"fat\":%u,\"chimesSaved\":%lu,"
     "\"eventsSaved\":%lu,\"levelRows\":%lu,\"errors\":%lu,\"chimesLost\":%lu,\"pending\":%u,"
     "\"levelsPending\":%u,\"levelsDropped\":%lu,\"lastWrite\":%lu,\"now\":%lu,"
     "\"today\":\"%s\",\"levelSec\":%u}"),
-    sd.ready ? 1 : 0, sd.msg, (unsigned long)sd.retryInS, (unsigned long)sd.cardMB,
+    sd.ready ? 1 : 0, sd.msg, (unsigned long)sd.retryInS, sd.wiping ? 1 : 0,
+    (unsigned long)sd.wipeFiles, (unsigned long)sd.wipeFailed, (unsigned long)sd.cardMB,
     (unsigned)sd.fatType,
     (unsigned long)sd.chimesSaved, (unsigned long)sd.eventsSaved, (unsigned long)sd.levelRows,
     (unsigned long)sd.writeErrors, (unsigned long)sd.chimesLost,
@@ -556,6 +581,23 @@ static void handleSd() {
     (unsigned long)soundLevelsDropped(), (unsigned long)sd.lastFlushEpoch,
     (unsigned long)time(nullptr), today, (unsigned)settings.levelSec);
   server.send(200, "application/json", buf);
+}
+
+// "Delete all data" (Device panel): every log and recording on the card,
+// plus the strike count and events list in RAM. Settings, WiFi and the
+// learned chime stay. The card part runs in the background (/api/sd: wipe).
+static void handleDataClear() {
+  bool card = sdReady();
+  const char* why = "";
+  if (!sdWipeStart(&why)) {
+    char b[120];
+    snprintf(b, sizeof(b), "{\"ok\":0,\"msg\":\"%s\"}", why);
+    server.send(200, "application/json", b);
+    return;
+  }
+  eventsClear();
+  soundClearCounts();
+  server.send(200, "application/json", card ? "{\"ok\":1,\"card\":1}" : "{\"ok\":1,\"card\":0}");
 }
 
 // "Check now" on the SD panel: mount a card that was just inserted instead
@@ -700,6 +742,8 @@ static bool startSTAMode() {
   server.on("/api/sd",           handleSd);
   server.on("/api/sd/bench",     HTTP_POST, handleSdBench);
   server.on("/api/sd/retry",     HTTP_POST, handleSdRetry);
+  server.on("/api/data/clear",   HTTP_POST, handleDataClear);
+  server.on("/api/learn/clip",   HTTP_POST, handleLearnClip);
   server.on("/api/sd/files",     handleSdFiles);
   server.on("/api/sd/get",       handleSdGet);
   server.on("/api/reset",        HTTP_POST, handleReset);

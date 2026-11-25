@@ -45,6 +45,11 @@ uint32_t analysisNoMemory();
 // Arm learning for 60 s: the next accepted strike's pitch becomes the
 // learned tone.
 bool        analysisLearnArm();
+// Learn from a chime recording on the SD card instead (16-bit mono WAV):
+// its first strike is found and measured like a live one, and becomes the
+// learned tone. *atSec = where that strike starts in the clip. On failure
+// *err says why. Reads the card for up to ~0.5 s; loop() context only.
+bool        analysisLearnFromClip(const char* path, StrikeTone& out, float* atSec, const char** err);
 bool        analysisLearnArmed();     // waiting for a strike
 bool        analysisLearnWaiting();   // same; called by sound.cpp at a trigger
 LearnResult analysisGetLearn();

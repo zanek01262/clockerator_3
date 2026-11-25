@@ -302,8 +302,15 @@ Stop at each step until it passes.
    pitch.
 5. **Chime events panel:** press **Record 10 s test clip**. It plays back when
    done. It should sound natural, not sped up or slowed down.
-6. Let the clock strike, then tune **Threshold** (and optionally **Learn
-   chime** + tone filter) in *Detection tuning*.
+6. Let the clock strike, then tune **Threshold** in *Detection tuning*. It goes
+   up to 120 dB, the microphone's limit, for a mic mounted close to the gongs.
+7. Optional: teach it the chime's pitch so other noises are ignored. Either
+   press **Learn chime** and let the clock strike, or play a recorded event
+   under *Chime events* and press **Learn chime from this**. Then turn the
+   **Tone filter** on.
+8. Once it's tuned, **Device → Delete all data** clears the test strikes and
+   recordings so the logs start clean. Settings, WiFi and the learned chime
+   are kept.
 
 ---
 
@@ -335,8 +342,9 @@ and the dashboard can also export them as `.xlsx`.
 | `/system.csv` | boots, card mounts, WiFi drops, microphone status |
 
 Recordings take roughly 10–40 MB a day, depending on how often the clock
-chimes, so a 32 GB card lasts years. The device never deletes anything; pull
-the card and tidy it on a PC when needed.
+chimes, so a 32 GB card lasts years. The device only deletes files when you
+press **Device → Delete all data**, which removes every log and recording
+(after asking). To keep some, copy them off the card on a PC first.
 
 **Without a card** the Clockerator still runs: it detects and counts strikes,
 measures pitch, groups events, and the whole live dashboard works (WiFi and
